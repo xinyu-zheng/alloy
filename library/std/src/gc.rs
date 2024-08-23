@@ -144,15 +144,9 @@ unsafe fn gc_realloc(ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut 
 }
 
 #[inline]
-unsafe fn gc_free(ptr: *mut u8, layout: Layout) {
-    if layout.align() <= MIN_ALIGN && layout.align() <= layout.size() {
-        unsafe {
-            bdwgc::GC_free(ptr);
-        }
-    } else {
-        unsafe {
-            bdwgc::GC_free(bdwgc::GC_base(ptr));
-        }
+unsafe fn gc_free(ptr: *mut u8, _: Layout) {
+    unsafe {
+        bdwgc::GC_free(ptr);
     }
 }
 
