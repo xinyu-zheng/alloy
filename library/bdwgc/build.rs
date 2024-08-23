@@ -32,7 +32,6 @@ fn main() {
         .pic(true)
         .define("BUILD_SHARED_LIBS", "OFF")
         .cflag("-DGC_ALWAYS_MULTITHREADED")
-        .cflag("-DBUFFERED_FINALIZATION")
         .cflag("-DGC_JAVA_FINALIZATION");
 
     if env::var("ENABLE_GC_ASSERTIONS").map_or(false, |v| v == "true") {
