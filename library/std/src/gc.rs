@@ -44,7 +44,7 @@ use core::{
     fmt,
     hash::{Hash, Hasher},
     marker::Unsize,
-    mem::{align_of_val_raw, transmute, MaybeUninit},
+    mem::{align_of_val_raw, MaybeUninit},
     ops::{CoerceUnsized, Deref, DispatchFromDyn, Receiver},
     ptr::{self, drop_in_place, NonNull},
 };
@@ -71,25 +71,6 @@ pub const MIN_ALIGN: usize = 8;
 
 #[derive(Debug)]
 pub struct GcAllocator;
-
-#[derive(Debug)]
-pub struct GcFinalizedAllocator;
-
-unsafe impl Allocator for GcFinalizedAllocator {
-    #[inline]
-    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
-        match layout.size() {
-            0 => Ok(NonNull::slice_from_raw_parts(layout.dangling(), 0)),
-            size => unsafe {
-                let ptr = bdwgc::GC_buffered_finalize_malloc(layout.size()) as *mut u8;
-                let ptr = NonNull::new(ptr).ok_or(AllocError)?;
-                Ok(NonNull::slice_from_raw_parts(ptr, size))
-            },
-        }
-    }
-
-    unsafe fn deallocate(&self, _: NonNull<u8>, _: Layout) {}
-}
 
 unsafe impl GlobalAlloc for GcAllocator {
     #[inline]
@@ -144,15 +125,9 @@ unsafe fn gc_realloc(ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut 
 }
 
 #[inline]
-unsafe fn gc_free(ptr: *mut u8, layout: Layout) {
-    if layout.align() <= MIN_ALIGN && layout.align() <= layout.size() {
-        unsafe {
-            bdwgc::GC_free(ptr);
-        }
-    } else {
-        unsafe {
-            bdwgc::GC_free(bdwgc::GC_base(ptr));
-        }
+unsafe fn gc_free(ptr: *mut u8, _: Layout) {
+    unsafe {
+        bdwgc::GC_free(ptr);
     }
 }
 
@@ -198,21 +173,11 @@ pub fn thread_registered() -> bool {
     unsafe { bdwgc::GC_thread_is_registered() != 0 }
 }
 
-// The function pointer to be executed on the finalization thread.
-//
-// This is not polymorphic because type information about the object inside the box is not known
-// during collection. However, it is enough to use the () type because we ensure that during
-// allocation that it points to the correct drop_in_place fn for the underlying value.
-type Finalizer = unsafe fn(*mut GcBox<()>);
-
 ////////////////////////////////////////////////////////////////////////////////
 // GC API
 ////////////////////////////////////////////////////////////////////////////////
 
 struct GcBox<T: ?Sized> {
-    /// The finalizer fn pointer for `GcBox<T>`. `None` if needs_finalize<T> == false.
-    #[allow(dead_code)]
-    finalizer: Option<Finalizer>,
     /// The object being garbage collected.
     value: T,
 }
@@ -417,27 +382,36 @@ impl<T> Gc<T> {
     unsafe fn new_internal(value: T) -> Self {
         #[cfg(not(bootstrap))]
         if !crate::mem::needs_finalizer::<T>() {
-            return Self::from_inner(
-                Box::leak(Box::new_in(GcBox { finalizer: None, value }, GcAllocator)).into(),
-            );
+            return Self::from_inner(Box::leak(Box::new_in(GcBox { value }, GcAllocator)).into());
+        }
+
+        unsafe extern "C" fn finalizer_shim<T>(obj: *mut u8, _: *mut u8) {
+            let drop_fn = drop_in_place::<GcBox<T>>;
+            drop_fn(obj as *mut GcBox<T>);
         }
 
         // By explicitly using type parameters here, we force rustc to compile monomorphised drop
         // glue for `GcBox<T>`. This ensures that the fn pointer points to the correct drop method
-        // (or chain of drop methods) for the type `T`. After this, it's safe to cast it to the
-        // generic function pointer `Finalizer` and then pass that around inside the collector where
-        // the type of the object is unknown.
+        // (or chain of drop methods) for the type `T`.
         //
-        // Note that we reify a `drop_in_place` for `GcBox<T>` here and not just `T` -- even though
-        // `GcBox` has no drop implementation! This is because `T` is stored at some offset inside
-        // `GcBox`, and doing it this way means that we don't have to manually add these offsets
-        // later when we call the finaliser.
-        let drop_fn = drop_in_place::<GcBox<T>> as unsafe fn(_);
-        let tagged = transmute::<_, usize>(drop_fn) | 0x1;
-        let finalizer = Some(transmute::<usize, Finalizer>(tagged));
-        Self::from_inner(
-            Box::leak(Box::new_in(GcBox { finalizer, value }, GcFinalizedAllocator)).into(),
-        )
+        // Note that even though `GcBox` has no drop implementation, we still reify a
+        // `drop_in_place` for `GcBox<T>`, and not`T`. This is because `T` may have an alignment
+        // such that it is stored at some offset inside `GcBox`. Calling `drop_in_place::<GcBox<T>>`
+        // will therefore generates drop glue for `T` which offsets the object pointer by the
+        // required amount of padding for `T` if necessary. If we did not do this, we'd have to
+        // manually ensure that the object pointer is correctly offset before the collector calls
+        // the finaliser.
+        let ptr = Box::leak(Box::new_in(GcBox { value }, GcAllocator));
+        unsafe {
+            bdwgc::GC_register_finalizer_no_order(
+                ptr as *mut _ as *mut u8,
+                Some(finalizer_shim::<T>),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+            );
+        }
+        Self::from_inner(ptr.into())
     }
 }
 
