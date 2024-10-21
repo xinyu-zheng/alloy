@@ -1235,8 +1235,12 @@ impl<'tcx> Ty<'tcx> {
         self.is_trivially_freeze() || tcx.is_freeze_raw(param_env.and(self))
     }
 
-    pub fn finalizer_optional(self, tcx: TyCtxt<'tcx>, param_env: ty::ParamEnv<'tcx>) -> bool {
-        tcx.finalizer_optional_raw(param_env.and(self))
+    pub fn drop_method_finalizer_elidable(
+        self,
+        tcx: TyCtxt<'tcx>,
+        param_env: ty::ParamEnv<'tcx>,
+    ) -> bool {
+        tcx.drop_method_finalizer_elidable_raw(param_env.and(self))
     }
 
     /// Fast path helper for testing if a type is `Freeze`.

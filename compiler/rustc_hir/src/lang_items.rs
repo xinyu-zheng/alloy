@@ -215,7 +215,7 @@ language_item_table! {
 
     FnOnceOutput,            sym::fn_once_output,      fn_once_output,             Target::AssocTy,        GenericRequirement::None;
 
-    FinalizerOptional,       sym::finalizer_optional,  finalizer_optional_trait,   Target::Trait,          GenericRequirement::Exact(0);
+    DropMethodFinalizerElidable,       sym::drop_method_finalizer_elidable,  drop_method_finalizer_elidable_trait,   Target::Trait,          GenericRequirement::Exact(0);
     Iterator,                sym::iterator,            iterator_trait,             Target::Trait,          GenericRequirement::Exact(0);
     FusedIterator,           sym::fused_iterator,      fused_iterator_trait,       Target::Trait,          GenericRequirement::Exact(0);
     Future,                  sym::future_trait,        future_trait,               Target::Trait,          GenericRequirement::Exact(0);

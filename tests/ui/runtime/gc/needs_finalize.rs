@@ -3,7 +3,7 @@
 #![feature(gc)]
 #![allow(dead_code)]
 
-use std::gc::{FinalizerOptional, Gc, NonFinalizable};
+use std::gc::{DropMethodFinalizerElidable, Gc, NonFinalizable};
 use std::mem;
 use std::rc::Rc;
 
@@ -26,7 +26,7 @@ struct ExplicitNoFinalize;
 // This struct doesn't need finalizing, but it's not annoted as such.
 struct NonAnnotated(usize);
 
-unsafe impl FinalizerOptional for HasDropNoFinalize {}
+unsafe impl DropMethodFinalizerElidable for HasDropNoFinalize {}
 
 impl<T> Drop for FinalizedContainer<T> {
     fn drop(&mut self) {}

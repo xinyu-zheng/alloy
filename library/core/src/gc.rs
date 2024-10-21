@@ -9,13 +9,13 @@ use crate::ops::{Deref, DerefMut};
 ///
 /// Unsafe because this should be used with care. Preventing drop from
 /// running can lead to surprising behaviour.
-#[rustc_diagnostic_item = "finalizer_optional"]
-#[cfg_attr(not(bootstrap), lang = "finalizer_optional")]
-pub unsafe trait FinalizerOptional {}
+#[rustc_diagnostic_item = "drop_method_finalizer_elidable"]
+#[cfg_attr(not(bootstrap), lang = "drop_method_finalizer_elidable")]
+pub unsafe trait DropMethodFinalizerElidable {}
 
 /// A wrapper which prevents `T` from being finalized when used in a `Gc`.
 ///
-/// This is useful for when its not possible to implement `FinalizerOptional`
+/// This is useful for when its not possible to implement `DropMethodFinalizerElidable`
 /// because of the orphan rule. However, if `NonFinalizable<T>` is used as a
 /// field type of another type which is finalizable, then `T` will also be
 /// finalized.
