@@ -70,11 +70,11 @@ impl<'tcx> FinalizationCtxt<'tcx> {
                 .struct_span_err(self.arg, format!("`{arg}` cannot be safely constructed.",));
             err.span_label(
                 self.arg,
-                "contains a reference (&) which may no longer be valid when it is finalized.",
+                "contains a reference (&) which is not safe to be used in a finaliser.",
             );
             err.span_label(
                 self.ctor,
-                format!("`Gc::new` requires that a type is reference free.",),
+                format!("`Gc::new` requires finalisable types to be reference free.",),
             );
             err.emit();
         }
