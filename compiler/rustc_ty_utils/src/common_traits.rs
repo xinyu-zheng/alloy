@@ -22,8 +22,11 @@ fn is_unpin_raw<'tcx>(tcx: TyCtxt<'tcx>, query: ty::ParamEnvAnd<'tcx, Ty<'tcx>>)
     is_item_raw(tcx, query, LangItem::Unpin)
 }
 
-fn finalizer_optional_raw<'tcx>(tcx: TyCtxt<'tcx>, query: ty::ParamEnvAnd<'tcx, Ty<'tcx>>) -> bool {
-    is_item_raw(tcx, query, LangItem::FinalizerOptional)
+fn drop_method_finalizer_elidable_raw<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    query: ty::ParamEnvAnd<'tcx, Ty<'tcx>>,
+) -> bool {
+    is_item_raw(tcx, query, LangItem::DropMethodFinalizerElidable)
 }
 
 fn is_item_raw<'tcx>(
@@ -43,7 +46,7 @@ pub(crate) fn provide(providers: &mut Providers) {
         is_sized_raw,
         is_freeze_raw,
         is_unpin_raw,
-        finalizer_optional_raw,
+        drop_method_finalizer_elidable_raw,
         ..*providers
     };
 }

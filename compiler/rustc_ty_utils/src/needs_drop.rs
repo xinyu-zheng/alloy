@@ -189,14 +189,14 @@ where
                     // `ManuallyDrop`. If it's a struct or enum without a `Drop`
                     // impl then check whether the field types need `Drop`.
                     ty::Adt(adt_def, args) => {
-                        let finalizer_optional = self.analysis_kind.is_finalization()
-                            && component.finalizer_optional(tcx, self.param_env);
+                        let drop_method_finalizer_elidable = self.analysis_kind.is_finalization()
+                            && component.drop_method_finalizer_elidable(tcx, self.param_env);
 
                         if self.analysis_kind.is_finalization() {
                             self.analysis_kind.cache_type(component);
                         }
 
-                        if finalizer_optional {
+                        if drop_method_finalizer_elidable {
                             for arg_ty in args.types() {
                                 // Required to prevent cycles when checking for finalizers. For
                                 // example, to check whether a Box<T> requires a finalizer, its type
@@ -215,7 +215,11 @@ where
                             continue;
                         }
 
-                        let tys = match (self.adt_components)(adt_def, args, finalizer_optional) {
+                        let tys = match (self.adt_components)(
+                            adt_def,
+                            args,
+                            drop_method_finalizer_elidable,
+                        ) {
                             Err(e) => return Some(Err(e)),
                             Ok(tys) => tys,
                         };
@@ -339,53 +343,54 @@ fn drop_tys_helper<'tcx>(
         })
     }
 
-    let adt_components =
-        move |adt_def: ty::AdtDef<'tcx>, args: GenericArgsRef<'tcx>, finalizer_optional: bool| {
-            if adt_def.is_manually_drop() {
-                debug!("drop_tys_helper: `{:?}` is manually drop", adt_def);
-                Ok(Vec::new())
-            } else if let Some(dtor_info) = adt_has_dtor(adt_def)
-                && !finalizer_optional
-            {
-                match dtor_info {
-                    DtorType::Significant => {
-                        debug!("drop_tys_helper: `{:?}` implements `Drop`", adt_def);
-                        Err(AlwaysRequiresDrop)
-                    }
-                    DtorType::Insignificant => {
-                        debug!("drop_tys_helper: `{:?}` drop is insignificant", adt_def);
-
-                        // Since the destructor is insignificant, we just want to make sure all of
-                        // the passed in type parameters are also insignificant.
-                        // Eg: Vec<T> dtor is insignificant when T=i32 but significant when T=Mutex.
-                        Ok(args.types().collect())
-                    }
+    let adt_components = move |adt_def: ty::AdtDef<'tcx>,
+                               args: GenericArgsRef<'tcx>,
+                               drop_method_finalizer_elidable: bool| {
+        if adt_def.is_manually_drop() {
+            debug!("drop_tys_helper: `{:?}` is manually drop", adt_def);
+            Ok(Vec::new())
+        } else if let Some(dtor_info) = adt_has_dtor(adt_def)
+            && !drop_method_finalizer_elidable
+        {
+            match dtor_info {
+                DtorType::Significant => {
+                    debug!("drop_tys_helper: `{:?}` implements `Drop`", adt_def);
+                    Err(AlwaysRequiresDrop)
                 }
-            } else if adt_def.is_union() {
-                debug!("drop_tys_helper: `{:?}` is a union", adt_def);
-                Ok(Vec::new())
-            } else {
-                let field_tys = adt_def.all_fields().map(|field| {
-                    let r = tcx.type_of(field.did).instantiate(tcx, args);
-                    debug!(
-                        "drop_tys_helper: Instantiate into {:?} with {:?} getting {:?}",
-                        field, args, r
-                    );
-                    r
-                });
-                if only_significant {
-                    // We can't recurse through the query system here because we might induce a cycle
-                    Ok(field_tys.collect())
-                } else {
-                    // We can use the query system if we consider all drops significant. In that case,
-                    // ADTs are `needs_drop` exactly if they `impl Drop` or if any of their "transitive"
-                    // fields do. There can be no cycles here, because ADTs cannot contain themselves as
-                    // fields.
-                    with_query_cache(tcx, field_tys)
+                DtorType::Insignificant => {
+                    debug!("drop_tys_helper: `{:?}` drop is insignificant", adt_def);
+
+                    // Since the destructor is insignificant, we just want to make sure all of
+                    // the passed in type parameters are also insignificant.
+                    // Eg: Vec<T> dtor is insignificant when T=i32 but significant when T=Mutex.
+                    Ok(args.types().collect())
                 }
             }
-            .map(|v| v.into_iter())
-        };
+        } else if adt_def.is_union() {
+            debug!("drop_tys_helper: `{:?}` is a union", adt_def);
+            Ok(Vec::new())
+        } else {
+            let field_tys = adt_def.all_fields().map(|field| {
+                let r = tcx.type_of(field.did).instantiate(tcx, args);
+                debug!(
+                    "drop_tys_helper: Instantiate into {:?} with {:?} getting {:?}",
+                    field, args, r
+                );
+                r
+            });
+            if only_significant {
+                // We can't recurse through the query system here because we might induce a cycle
+                Ok(field_tys.collect())
+            } else {
+                // We can use the query system if we consider all drops significant. In that case,
+                // ADTs are `needs_drop` exactly if they `impl Drop` or if any of their "transitive"
+                // fields do. There can be no cycles here, because ADTs cannot contain themselves as
+                // fields.
+                with_query_cache(tcx, field_tys)
+            }
+        }
+        .map(|v| v.into_iter())
+    };
 
     NeedsDropTypes::new(tcx, param_env, ty, adt_components, AnalysisKind::Destruction)
 }
@@ -454,31 +459,32 @@ fn needs_finalizer_raw<'tcx>(tcx: TyCtxt<'tcx>, query: ty::ParamEnvAnd<'tcx, Ty<
     let adt_has_dtor =
         |adt_def: ty::AdtDef<'tcx>| adt_def.destructor(tcx).map(|_| DtorType::Significant);
 
-    let adt_components =
-        move |adt_def: ty::AdtDef<'tcx>, args: GenericArgsRef<'tcx>, finalizer_optional: bool| {
-            if adt_def.is_manually_drop() {
-                debug!("finalize_tys_helper: `{:?}` is manually drop", adt_def);
-                Ok(Vec::new())
-            } else if adt_has_dtor(adt_def).is_some() && !finalizer_optional {
-                debug!("finalize_tys_helper: `{:?}` implements `Drop`", adt_def);
-                Err(AlwaysRequiresDrop)
-            } else if adt_def.is_union() {
-                debug!("finalize_tys_helper: `{:?}` is a union", adt_def);
-                Ok(Vec::new())
-            } else {
-                let field_tys = adt_def.all_fields().map(|field| {
-                    let r = tcx.type_of(field.did).instantiate(tcx, args);
-                    debug!(
-                        "finalize_tys_helper: Subst into {:?} with {:?} getting {:?}",
-                        field, args, r
-                    );
-                    r
-                });
+    let adt_components = move |adt_def: ty::AdtDef<'tcx>,
+                               args: GenericArgsRef<'tcx>,
+                               drop_method_finalizer_elidable: bool| {
+        if adt_def.is_manually_drop() {
+            debug!("finalize_tys_helper: `{:?}` is manually drop", adt_def);
+            Ok(Vec::new())
+        } else if adt_has_dtor(adt_def).is_some() && !drop_method_finalizer_elidable {
+            debug!("finalize_tys_helper: `{:?}` implements `Drop`", adt_def);
+            Err(AlwaysRequiresDrop)
+        } else if adt_def.is_union() {
+            debug!("finalize_tys_helper: `{:?}` is a union", adt_def);
+            Ok(Vec::new())
+        } else {
+            let field_tys = adt_def.all_fields().map(|field| {
+                let r = tcx.type_of(field.did).instantiate(tcx, args);
+                debug!(
+                    "finalize_tys_helper: Subst into {:?} with {:?} getting {:?}",
+                    field, args, r
+                );
+                r
+            });
 
-                Ok(field_tys.collect())
-            }
-            .map(|v| v.into_iter())
-        };
+            Ok(field_tys.collect())
+        }
+        .map(|v| v.into_iter())
+    };
 
     let res = NeedsDropTypes::new(
         tcx,
