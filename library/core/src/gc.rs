@@ -47,6 +47,13 @@ impl<T: ?Sized> DerefMut for NonFinalizable<T> {
     }
 }
 
+#[unstable(feature = "gc", issue = "none")]
+#[cfg_attr(not(test), rustc_diagnostic_item = "ReferenceFree")]
+pub unsafe auto trait ReferenceFree {}
+
+impl<T> !ReferenceFree for &T {}
+impl<T> !ReferenceFree for &mut T {}
+
 /// A wrapper to prevent alloy from performing Finaliser Safety Analysis (FSA)
 /// on `T`.
 ///
@@ -90,9 +97,5 @@ impl<T: ?Sized> DerefMut for FinalizeUnchecked<T> {
 #[cfg(not(bootstrap))]
 unsafe impl<T> FinalizerSafe for FinalizeUnchecked<T> {}
 
-#[unstable(feature = "gc", issue = "none")]
-#[cfg_attr(not(test), rustc_diagnostic_item = "ReferenceFree")]
-pub auto trait ReferenceFree {}
-
-impl<T> !ReferenceFree for &T {}
-impl<T> !ReferenceFree for &mut T {}
+#[cfg(not(bootstrap))]
+unsafe impl<T> ReferenceFree for FinalizeUnchecked<T> {}
