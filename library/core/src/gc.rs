@@ -69,7 +69,7 @@ impl<T> !ReferenceFree for &mut T {}
 #[unstable(feature = "gc", issue = "none")]
 #[cfg_attr(not(test), rustc_diagnostic_item = "FinalizeUnchecked")]
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct FinalizeUnchecked<T: ?Sized>(pub T);
+pub struct FinalizeUnchecked<T: ?Sized>(T);
 
 impl<T> FinalizeUnchecked<T> {
     pub unsafe fn new(value: T) -> Self {
