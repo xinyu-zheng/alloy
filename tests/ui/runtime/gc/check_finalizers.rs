@@ -68,16 +68,21 @@ impl Drop for ShouldFail3 {
 fn main() {
     Gc::new(ShouldPass(123 as *mut u8));
 
-    Gc::new(ShouldFail(Cell::new(123))); //~ ERROR: `ShouldFail(Cell::new(123))` cannot be safely finalized.
+    Gc::new(ShouldFail(Cell::new(123)));
+    //~^ ERROR: `ShouldFail(Cell::new(123))` has a drop method which cannot be safely finalized.
+    //~^^ ERROR: `ShouldFail(Cell::new(123))` has a drop method which cannot be safely finalized.
 
     let gcfields = HasGcFields(Gc::new(123));
-    Gc::new(gcfields); //~ ERROR: `gcfields` cannot be safely finalized.
+    Gc::new(gcfields);
+    //~^ ERROR: `gcfields` has a drop method which cannot be safely finalized.
 
     let self_call = ShouldFail2(123 as *mut u8);
-    Gc::new(self_call); //~ ERROR: `self_call` cannot be safely finalized.
+    Gc::new(self_call);
+    //~^ ERROR: `self_call` has a drop method which cannot be safely finalized.
 
     let not_threadsafe = ShouldFail3(NotThreadSafe(123));
-    Gc::new(not_threadsafe); //~ ERROR: `not_threadsafe` cannot be safely finalized.
+    Gc::new(not_threadsafe);
+    //~^ ERROR: `not_threadsafe` has a drop method which cannot be safely finalized.
 
     unsafe { Gc::new(FinalizeUnchecked::new(ShouldFail(Cell::new(123)))) };
 }

@@ -13,6 +13,82 @@ use rustc_trait_selection::infer::TyCtxtInferExt;
 #[derive(PartialEq)]
 pub struct CheckFinalizers;
 
+#[derive(Debug)]
+enum FinalizerErrorKind<'tcx> {
+    /// Does not implement `Send` + `Sync`
+    NotSendAndSync(Span),
+    /// Does not implement `FinalizerSafe`
+    NotFinalizerSafe(Ty<'tcx>, Span),
+    /// Does not implement `ReferenceFree`
+    NotReferenceFree,
+    /// Uses a trait object whose concrete type is unknown
+    UnknownTraitObject,
+    /// Calls a function whose definition is unavailable, so we can't be certain it's safe.
+    MissingFnDef,
+}
+
+impl<'tcx> FinalizerErrorKind<'tcx> {
+    fn emit(&self, cx: &FinalizationCtxt<'tcx>) {
+        let arg_sp = cx.tcx.sess.source_map().span_to_snippet(cx.arg).unwrap();
+        let mut err = cx.tcx.sess.psess.dcx.struct_span_err(
+            cx.arg,
+            format!("`{arg_sp}` has a drop method which cannot be safely finalized."),
+        );
+        match self {
+            Self::NotSendAndSync(span) => {
+                err.span_label(*span, "caused by the expression in `fn drop(&mut)` here because");
+                err.span_label(*span, "it uses a type which is not safe to use in a finalizer.");
+                err.help("`Gc` runs finalizers on a separate thread, so drop methods\nmust only use values whose types implement `Send` + `Sync`.");
+            }
+            Self::NotFinalizerSafe(ty, span) => {
+                // Special-case `Gc` types for more friendly errors
+                if cx.is_gc(*ty) {
+                    err.span_label(
+                        *span,
+                        "caused by the expression here in `fn drop(&mut)` because",
+                    );
+                    err.span_label(*span, "it uses another `Gc` type.");
+                    err.span_label(
+                        cx.ctor,
+                        format!("Finalizers cannot safely dereference other `Gc`s, because they might have already been finalised."),
+                    );
+                } else {
+                    err.span_label(
+                        *span,
+                        "caused by the expression in `fn drop(&mut)` here because",
+                    );
+                    err.span_label(
+                        *span,
+                        "it uses a type which is not safe to use in a finalizer.",
+                    );
+                    err.help("`Gc` runs finalizers on a separate thread, so drop methods\nmust only use values whose types implement `FinalizerSafe`.");
+                    err.span_label(
+                        cx.ctor,
+                        format!("`Gc::new` requires that it implements the `FinalizeSafe` trait.",),
+                    );
+                }
+            }
+            Self::NotReferenceFree => {
+                err.span_label(
+                    cx.arg,
+                    "contains a reference (&) which is not safe to be used in a finalizer.",
+                );
+                err.span_label(
+                    cx.ctor,
+                    format!("`Gc::new` requires finalizable types to be reference free.",),
+                );
+            }
+            Self::MissingFnDef => {
+                err.span_label(cx.arg, "contains a function call which may be unsafe.");
+            }
+            Self::UnknownTraitObject => {
+                err.span_label(cx.arg, "contains a trait object whose implementation is unknown.");
+            }
+        }
+        err.emit();
+    }
+}
+
 impl<'tcx> MirPass<'tcx> for CheckFinalizers {
     fn run_pass(&self, tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) {
         let ctor = tcx.get_diagnostic_item(sym::gc_ctor);
@@ -61,22 +137,8 @@ struct FinalizationCtxt<'tcx> {
 impl<'tcx> FinalizationCtxt<'tcx> {
     fn check_for_dangling_refs(&mut self, ty: Ty<'tcx>) {
         if !self.is_reference_free(ty) && self.tcx.needs_finalizer_raw(self.param_env.and(ty)) {
-            let arg = self.tcx.sess.source_map().span_to_snippet(self.arg).unwrap();
-            let mut err = self
-                .tcx
-                .sess
-                .psess
-                .dcx
-                .struct_span_err(self.arg, format!("`{arg}` cannot be safely constructed.",));
-            err.span_label(
-                self.arg,
-                "contains a reference (&) which is not safe to be used in a finaliser.",
-            );
-            err.span_label(
-                self.ctor,
-                format!("`Gc::new` requires finalisable types to be reference free.",),
-            );
-            err.emit();
+            let err = FinalizerErrorKind::NotReferenceFree;
+            err.emit(self);
         }
     }
 
@@ -112,16 +174,18 @@ impl<'tcx> FinalizationCtxt<'tcx> {
             | ty::RawPtr(..)
             | ty::Ref(..)
             | ty::Str
+            | ty::Error(..)
             | ty::Foreign(..) => {
                 // None of these types can implement Drop.
                 return;
             }
-            ty::Dynamic(..) | ty::Error(..) => {
+            ty::Dynamic(..) => {
                 // Dropping a trait object uses a virtual call, so we can't
                 // work out which drop method to look at compile-time. This
                 // means we must be more conservative and bail with an error
                 // here, even if the drop impl itself would have been safe.
-                self.emit_err();
+                let err = FinalizerErrorKind::UnknownTraitObject;
+                err.emit(self);
             }
             ty::Slice(ty) => self.check(*ty),
             ty::Array(elem_ty, ..) => {
@@ -137,7 +201,8 @@ impl<'tcx> FinalizationCtxt<'tcx> {
                     if def.is_box() {
                         // This is a special case because Box has an empty drop
                         // method which is filled in later by the compiler.
-                        self.emit_err();
+                        let err = FinalizerErrorKind::MissingFnDef;
+                        err.emit(self);
                     }
 
                     let drop_trait = self.tcx.require_lang_item(LangItem::Drop, None);
@@ -221,53 +286,11 @@ impl<'tcx> FinalizationCtxt<'tcx> {
         }
         return false;
     }
-
-    fn emit_err(&self) {
-        let arg = self.tcx.sess.source_map().span_to_snippet(self.arg).unwrap();
-        let mut err = self
-            .tcx
-            .sess
-            .psess
-            .dcx
-            .struct_span_err(self.arg, format!("`{arg}` cannot be safely finalized.",));
-        err.span_label(self.arg, "has a drop method which cannot be safely finalized.");
-        err.span_label(
-            self.ctor,
-            format!("`Gc::new` requires that it implements the `FinalizeSafe` trait.",),
-        );
-        err.help(format!("`Gc` runs finalizers on a separate thread, so `{arg}` must implement `FinalizeSafe` in order to be safely dropped.",));
-        err.emit();
-    }
 }
 
 struct ProjectionChecker<'a, 'tcx> {
     cx: &'a FinalizationCtxt<'tcx>,
     body: &'a Body<'tcx>,
-}
-
-impl<'a, 'tcx> ProjectionChecker<'a, 'tcx> {
-    fn emit_err(&self, ty: Ty<'tcx>, span: Span) {
-        let arg = self.cx.tcx.sess.source_map().span_to_snippet(self.cx.arg).unwrap();
-        let mut err = self
-            .cx
-            .tcx
-            .sess
-            .psess
-            .dcx
-            .struct_span_err(self.cx.arg, format!("`{arg}` cannot be safely finalized.",));
-        if self.cx.is_gc(ty) {
-            err.span_label(self.cx.arg, "has a drop method which cannot be safely finalized.");
-            err.span_label(span, "caused by the expression here in `fn drop(&mut)` because");
-            err.span_label(span, "it uses another `Gc` type.");
-            err.help("`Gc` finalizers are unordered, so this field may have already been dropped. It is not safe to dereference.");
-        } else {
-            err.span_label(self.cx.arg, "has a drop method which cannot be safely finalized.");
-            err.span_label(span, "caused by the expression in `fn drop(&mut)` here because");
-            err.span_label(span, "it uses a type which is not safe to use in a finalizer.");
-            err.help("`Gc` runs finalizers on a separate thread, so drop methods\nmust only use values whose types implement `Send + Sync + FinalizerSafe`.");
-        }
-        err.emit();
-    }
 }
 
 impl<'a, 'tcx> Visitor<'tcx> for ProjectionChecker<'a, 'tcx> {
@@ -280,12 +303,14 @@ impl<'a, 'tcx> Visitor<'tcx> for ProjectionChecker<'a, 'tcx> {
         for (_, proj) in place_ref.iter_projections() {
             match proj {
                 ProjectionElem::Field(_, ty) => {
-                    if !self.cx.is_finalizer_safe(ty)
-                        || !self.cx.is_send(ty)
-                        || !self.cx.is_sync(ty)
-                    {
-                        let span = self.body.source_info(location).span;
-                        self.emit_err(ty, span);
+                    let span = self.body.source_info(location).span;
+                    if !self.cx.is_send(ty) || !self.cx.is_sync(ty) {
+                        let err = FinalizerErrorKind::NotSendAndSync(span);
+                        err.emit(self.cx);
+                    }
+                    if !self.cx.is_finalizer_safe(ty) {
+                        let err = FinalizerErrorKind::NotFinalizerSafe(ty, span);
+                        err.emit(self.cx);
                     }
                 }
                 _ => (),
@@ -294,7 +319,7 @@ impl<'a, 'tcx> Visitor<'tcx> for ProjectionChecker<'a, 'tcx> {
         self.super_projection(place_ref, context, location);
     }
 
-    fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, location: Location) {
+    fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, _: Location) {
         if let TerminatorKind::Call { ref args, .. } = terminator.kind {
             for caller_arg in self.body.args_iter() {
                 let recv_ty = self.body.local_decls()[caller_arg].ty;
@@ -334,8 +359,8 @@ impl<'a, 'tcx> Visitor<'tcx> for ProjectionChecker<'a, 'tcx> {
                         // find every MIR local which refers to it that ends
                         // up being passed to a call terminator. This is not
                         // trivial to do at the moment.
-                        let span = self.body.source_info(location).span;
-                        self.emit_err(arg_ty, span);
+                        let err = FinalizerErrorKind::MissingFnDef;
+                        err.emit(self.cx);
                     }
                 }
             }
