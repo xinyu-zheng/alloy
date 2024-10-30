@@ -1,5 +1,6 @@
 #![allow(rustc::untranslatable_diagnostic)]
 #![allow(rustc::diagnostic_outside_of_impl)]
+use rustc_hir::def_id::DefId;
 use rustc_hir::lang_items::LangItem;
 use rustc_middle::mir::visit::PlaceContext;
 use rustc_middle::mir::visit::Visitor;
@@ -25,6 +26,11 @@ enum FinalizerErrorKind<'tcx> {
     UnknownTraitObject,
     /// Calls a function whose definition is unavailable, so we can't be certain it's safe.
     MissingFnDef,
+    /// The drop glue contains an unsound drop method from an external crate. This will have been
+    /// caused by one of the above variants. However, it is confusing to propagate this to the user
+    /// because they most likely won't be in a position to fix it from a downstream crate. Currently
+    /// this only applies to types belonging to the standard library.
+    UnsoundExternalDropGlue(Span),
 }
 
 impl<'tcx> FinalizerErrorKind<'tcx> {
@@ -83,6 +89,9 @@ impl<'tcx> FinalizerErrorKind<'tcx> {
             }
             Self::UnknownTraitObject => {
                 err.span_label(cx.arg, "contains a trait object whose implementation is unknown.");
+            }
+            Self::UnsoundExternalDropGlue(span) => {
+                err.span_label(*span, "is not safe to be run as a finalizer");
             }
         }
         err.emit();
@@ -158,11 +167,9 @@ impl<'tcx> FinalizationCtxt<'tcx> {
             let Some(ty) = tys.pop() else {
                 break;
             };
-            // We must now recurse through the `Ty`'s component types and search for
-            // all the `Drop` impls. If we find any, we have to check that there are
-            // no unsound projections into fields in their drop method body. More
-            // specifically: if one of the drop methods dereferences a field which
-            // is !FinalizerSafe, we must throw an error.
+
+            // We must now identify every drop method in the drop glue for `ty`. This means looking
+            // at each component type and adding those to the stack for later processing.
             match ty.kind() {
                 ty::Infer(ty::FreshIntTy(_))
                 | ty::Infer(ty::FreshFloatTy(_))
@@ -194,26 +201,58 @@ impl<'tcx> FinalizationCtxt<'tcx> {
                     }
                 }
                 ty::Adt(def, substs) if !self.is_copy(ty) => {
-                    for field in def.all_fields() {
-                        let field_ty = self.tcx.type_of(field.did).instantiate(self.tcx, substs);
-                        tys.push(field_ty);
-                    }
-
-                    if !def.has_dtor(self.tcx) {
-                        continue;
-                    }
-
                     if def.is_box() {
                         // This is a special case because Box has an empty drop
                         // method which is filled in later by the compiler.
                         errors.push(FinalizerErrorKind::MissingFnDef);
                     }
-                    DropMethodChecker::new(ty, self, &mut errors).check();
+                    if def.has_dtor(self.tcx) {
+                        match DropMethodChecker::new(self.drop_mir(ty), self).check() {
+                            Err(_) if self.in_std_lib(def.did()) => {
+                                errors.push(FinalizerErrorKind::UnsoundExternalDropGlue(
+                                    self.drop_mir(ty).span,
+                                ));
+                                // We skip checking the drop methods of this standard library
+                                // type's fields -- we already know that it has an unsafe finaliser, so
+                                // going over its fields serves no purpose other than to confuse users
+                                // with extraneous FSA errors that they won't be able to fix anyway.
+                                continue;
+                            }
+                            Err(ref mut e) => errors.append(e),
+                            _ => (),
+                        }
+                    }
+
+                    for field in def.all_fields() {
+                        let field_ty = self.tcx.type_of(field.did).instantiate(self.tcx, substs);
+                        tys.push(field_ty);
+                    }
                 }
                 _ => (),
             }
         }
         if errors.is_empty() { Ok(()) } else { Err(errors) }
+    }
+
+    fn drop_mir<'a>(&self, ty: Ty<'tcx>) -> &'a Body<'tcx> {
+        let ty::Adt(_, substs) = ty.kind() else {
+            bug!();
+        };
+        let dt = self.tcx.require_lang_item(LangItem::Drop, None);
+        let df = self.tcx.associated_item_def_ids(dt)[0];
+        let s = self.tcx.mk_args_trait(ty, substs.into_iter());
+        let i = ty::Instance::resolve(self.tcx, self.param_env, df, s).unwrap().unwrap();
+        self.tcx.instance_mir(i.def)
+    }
+
+    fn in_std_lib(&self, did: DefId) -> bool {
+        let alloc_crate =
+            self.tcx.get_diagnostic_item(sym::Rc).map_or(false, |x| did.krate == x.krate);
+        let core_crate =
+            self.tcx.get_diagnostic_item(sym::RefCell).map_or(false, |x| did.krate == x.krate);
+        let std_crate =
+            self.tcx.get_diagnostic_item(sym::Mutex).map_or(false, |x| did.krate == x.krate);
+        alloc_crate || std_crate || core_crate
     }
 
     fn is_finalizer_safe(&self, ty: Ty<'tcx>) -> bool {
@@ -280,31 +319,19 @@ impl<'tcx> FinalizationCtxt<'tcx> {
 }
 
 struct DropMethodChecker<'a, 'tcx> {
-    cx: &'a FinalizationCtxt<'tcx>,
     body: &'a Body<'tcx>,
-    errors: &'a mut Vec<FinalizerErrorKind<'tcx>>,
+    cx: &'a FinalizationCtxt<'tcx>,
+    errors: Vec<FinalizerErrorKind<'tcx>>,
 }
 
 impl<'a, 'tcx> DropMethodChecker<'a, 'tcx> {
-    fn new(
-        ty: Ty<'tcx>,
-        fctxt: &'a FinalizationCtxt<'tcx>,
-        errors: &'a mut Vec<FinalizerErrorKind<'tcx>>,
-    ) -> Self {
-        let ty::Adt(_, substs) = ty.kind() else {
-            bug!();
-        };
-        let drop_trait = fctxt.tcx.require_lang_item(LangItem::Drop, None);
-        let drop_fn = fctxt.tcx.associated_item_def_ids(drop_trait)[0];
-        let substs = fctxt.tcx.mk_args_trait(ty, substs.into_iter());
-        let instance =
-            ty::Instance::resolve(fctxt.tcx, fctxt.param_env, drop_fn, substs).unwrap().unwrap();
-        let body = fctxt.tcx.instance_mir(instance.def);
-        Self { cx: fctxt, body, errors }
+    fn new(body: &'a Body<'tcx>, fctxt: &'a FinalizationCtxt<'tcx>) -> Self {
+        Self { body, cx: fctxt, errors: Vec::new() }
     }
 
-    fn check(&mut self) {
+    fn check(mut self) -> Result<(), Vec<FinalizerErrorKind<'tcx>>> {
         self.visit_body(self.body);
+        if self.errors.is_empty() { Ok(()) } else { Err(self.errors) }
     }
 }
 
@@ -372,8 +399,7 @@ impl<'a, 'tcx> Visitor<'tcx> for DropMethodChecker<'a, 'tcx> {
                         // find every MIR local which refers to it that ends
                         // up being passed to a call terminator. This is not
                         // trivial to do at the moment.
-                        let err = FinalizerErrorKind::MissingFnDef;
-                        err.emit(self.cx);
+                        self.errors.push(FinalizerErrorKind::MissingFnDef);
                     }
                 }
             }
