@@ -101,27 +101,30 @@ impl<'tcx> MirPass<'tcx> for CheckFinalizers {
         let param_env = tcx.param_env(body.source.def_id());
 
         for block in body.basic_blocks.iter() {
-            match &block.terminator {
-                Some(Terminator { kind: TerminatorKind::Call { func, args, .. }, source_info }) => {
-                    let func_ty = func.ty(body, tcx);
-                    if let ty::FnDef(fn_did, ..) = func_ty.kind() {
-                        if *fn_did == ctor_did {
-                            let arg = match &args[0].node {
-                                Operand::Copy(place) | Operand::Move(place) => {
-                                    body.local_decls()[place.local].source_info.span
-                                }
-                                Operand::Constant(con) => con.span,
-                            };
-                            let arg_ty = args[0].node.ty(body, tcx);
-
-                            let mut finalizer_cx =
-                                FinalizationCtxt { ctor: source_info.span, arg, tcx, param_env };
-                            finalizer_cx.check_for_dangling_refs(arg_ty);
-                            finalizer_cx.check(arg_ty);
-                        }
-                    }
+            let Some(Terminator { kind: TerminatorKind::Call { func, args, .. }, source_info }) =
+                &block.terminator
+            else {
+                continue;
+            };
+            let ty::FnDef(fn_did, ..) = func.ty(body, tcx).kind() else {
+                continue;
+            };
+            if *fn_did != ctor_did {
+                // Skip over anything that's not `Gc::new`.
+                continue;
+            }
+            let arg = match &args[0].node {
+                Operand::Copy(place) | Operand::Move(place) => {
+                    body.local_decls()[place.local].source_info.span
                 }
-                _ => {}
+                Operand::Constant(con) => con.span,
+            };
+
+            let mut fctxt = FinalizationCtxt { ctor: source_info.span, arg, tcx, param_env };
+            let arg_ty = args[0].node.ty(body, tcx);
+            let res = fctxt.check_drop_glue(arg_ty);
+            if let Err(errs) = res {
+                errs.into_iter().for_each(|e| e.emit(&fctxt))
             }
         }
     }
@@ -135,94 +138,82 @@ struct FinalizationCtxt<'tcx> {
 }
 
 impl<'tcx> FinalizationCtxt<'tcx> {
-    fn check_for_dangling_refs(&mut self, ty: Ty<'tcx>) {
-        if !self.is_reference_free(ty) && self.tcx.needs_finalizer_raw(self.param_env.and(ty)) {
-            let err = FinalizerErrorKind::NotReferenceFree;
-            err.emit(self);
-        }
-    }
-
-    fn check(&mut self, ty: Ty<'tcx>) {
-        if !self.tcx.needs_finalizer_raw(self.param_env.and(ty)) {
-            return;
+    fn check_drop_glue(&mut self, ty: Ty<'tcx>) -> Result<(), Vec<FinalizerErrorKind<'tcx>>> {
+        if !self.tcx.needs_finalizer_raw(self.param_env.and(ty)) || self.is_finalize_unchecked(ty) {
+            return Ok(());
         }
 
-        if self.is_finalize_unchecked(ty) {
-            return;
+        if !self.is_reference_free(ty) {
+            return Err(vec![FinalizerErrorKind::NotReferenceFree]);
         }
 
         if self.is_send(ty) && self.is_sync(ty) && self.is_finalizer_safe(ty) {
-            return;
+            return Ok(());
         }
 
-        // We must now recurse through the `Ty`'s component types and search for
-        // all the `Drop` impls. If we find any, we have to check that there are
-        // no unsound projections into fields in their drop method body. More
-        // specifically: if one of the drop methods dereferences a field which
-        // is !FinalizerSafe, we must throw an error.
-        match ty.kind() {
-            ty::Infer(ty::FreshIntTy(_))
-            | ty::Infer(ty::FreshFloatTy(_))
-            | ty::Bool
-            | ty::Int(_)
-            | ty::Uint(_)
-            | ty::Float(_)
-            | ty::Never
-            | ty::FnDef(..)
-            | ty::FnPtr(_)
-            | ty::Char
-            | ty::RawPtr(..)
-            | ty::Ref(..)
-            | ty::Str
-            | ty::Error(..)
-            | ty::Foreign(..) => {
-                // None of these types can implement Drop.
-                return;
-            }
-            ty::Dynamic(..) => {
-                // Dropping a trait object uses a virtual call, so we can't
-                // work out which drop method to look at compile-time. This
-                // means we must be more conservative and bail with an error
-                // here, even if the drop impl itself would have been safe.
-                let err = FinalizerErrorKind::UnknownTraitObject;
-                err.emit(self);
-            }
-            ty::Slice(ty) => self.check(*ty),
-            ty::Array(elem_ty, ..) => {
-                self.check(*elem_ty);
-            }
-            ty::Tuple(fields) => {
-                // Each tuple field must be individually checked for a `Drop`
-                // impl.
-                fields.iter().for_each(|f_ty| self.check(f_ty));
-            }
-            ty::Adt(def, substs) if !self.is_copy(ty) => {
-                if def.has_dtor(self.tcx) {
+        let mut errors = Vec::new();
+        let mut tys = vec![ty];
+
+        loop {
+            let Some(ty) = tys.pop() else {
+                break;
+            };
+            // We must now recurse through the `Ty`'s component types and search for
+            // all the `Drop` impls. If we find any, we have to check that there are
+            // no unsound projections into fields in their drop method body. More
+            // specifically: if one of the drop methods dereferences a field which
+            // is !FinalizerSafe, we must throw an error.
+            match ty.kind() {
+                ty::Infer(ty::FreshIntTy(_))
+                | ty::Infer(ty::FreshFloatTy(_))
+                | ty::Bool
+                | ty::Int(_)
+                | ty::Uint(_)
+                | ty::Float(_)
+                | ty::Never
+                | ty::FnDef(..)
+                | ty::FnPtr(_)
+                | ty::Char
+                | ty::RawPtr(..)
+                | ty::Ref(..)
+                | ty::Str
+                | ty::Error(..)
+                | ty::Foreign(..) => (),
+                ty::Dynamic(..) => {
+                    // Dropping a trait object uses a virtual call, so we can't
+                    // work out which drop method to look at compile-time. This
+                    // means we must be more conservative and bail with an error
+                    // here, even if the drop impl itself would have been safe.
+                    errors.push(FinalizerErrorKind::UnknownTraitObject);
+                }
+                ty::Slice(ty) | ty::Array(ty, ..) => tys.push(*ty),
+                ty::Tuple(fields) => {
+                    for f in fields.iter() {
+                        // Each tuple field must be individually checked for a `Drop` impl.
+                        tys.push(f)
+                    }
+                }
+                ty::Adt(def, substs) if !self.is_copy(ty) => {
+                    for field in def.all_fields() {
+                        let field_ty = self.tcx.type_of(field.did).instantiate(self.tcx, substs);
+                        tys.push(field_ty);
+                    }
+
+                    if !def.has_dtor(self.tcx) {
+                        continue;
+                    }
+
                     if def.is_box() {
                         // This is a special case because Box has an empty drop
                         // method which is filled in later by the compiler.
-                        let err = FinalizerErrorKind::MissingFnDef;
-                        err.emit(self);
+                        errors.push(FinalizerErrorKind::MissingFnDef);
                     }
-
-                    let drop_trait = self.tcx.require_lang_item(LangItem::Drop, None);
-                    let drop_fn = self.tcx.associated_item_def_ids(drop_trait)[0];
-                    let substs = self.tcx.mk_args_trait(ty, substs.into_iter());
-                    let instance = ty::Instance::resolve(self.tcx, self.param_env, drop_fn, substs)
-                        .unwrap()
-                        .unwrap();
-                    let mir = self.tcx.instance_mir(instance.def);
-                    let mut checker = ProjectionChecker { cx: self, body: mir };
-                    checker.visit_body(&mir);
+                    DropMethodChecker::new(ty, self, &mut errors).check();
                 }
-
-                for field in def.all_fields() {
-                    let field_ty = self.tcx.type_of(field.did).instantiate(self.tcx, substs);
-                    self.check(field_ty);
-                }
+                _ => (),
             }
-            _ => (),
         }
+        if errors.is_empty() { Ok(()) } else { Err(errors) }
     }
 
     fn is_finalizer_safe(&self, ty: Ty<'tcx>) -> bool {
@@ -288,12 +279,36 @@ impl<'tcx> FinalizationCtxt<'tcx> {
     }
 }
 
-struct ProjectionChecker<'a, 'tcx> {
+struct DropMethodChecker<'a, 'tcx> {
     cx: &'a FinalizationCtxt<'tcx>,
     body: &'a Body<'tcx>,
+    errors: &'a mut Vec<FinalizerErrorKind<'tcx>>,
 }
 
-impl<'a, 'tcx> Visitor<'tcx> for ProjectionChecker<'a, 'tcx> {
+impl<'a, 'tcx> DropMethodChecker<'a, 'tcx> {
+    fn new(
+        ty: Ty<'tcx>,
+        fctxt: &'a FinalizationCtxt<'tcx>,
+        errors: &'a mut Vec<FinalizerErrorKind<'tcx>>,
+    ) -> Self {
+        let ty::Adt(_, substs) = ty.kind() else {
+            bug!();
+        };
+        let drop_trait = fctxt.tcx.require_lang_item(LangItem::Drop, None);
+        let drop_fn = fctxt.tcx.associated_item_def_ids(drop_trait)[0];
+        let substs = fctxt.tcx.mk_args_trait(ty, substs.into_iter());
+        let instance =
+            ty::Instance::resolve(fctxt.tcx, fctxt.param_env, drop_fn, substs).unwrap().unwrap();
+        let body = fctxt.tcx.instance_mir(instance.def);
+        Self { cx: fctxt, body, errors }
+    }
+
+    fn check(&mut self) {
+        self.visit_body(self.body);
+    }
+}
+
+impl<'a, 'tcx> Visitor<'tcx> for DropMethodChecker<'a, 'tcx> {
     fn visit_projection(
         &mut self,
         place_ref: PlaceRef<'tcx>,
@@ -305,12 +320,10 @@ impl<'a, 'tcx> Visitor<'tcx> for ProjectionChecker<'a, 'tcx> {
                 ProjectionElem::Field(_, ty) => {
                     let span = self.body.source_info(location).span;
                     if !self.cx.is_send(ty) || !self.cx.is_sync(ty) {
-                        let err = FinalizerErrorKind::NotSendAndSync(span);
-                        err.emit(self.cx);
+                        self.errors.push(FinalizerErrorKind::NotSendAndSync(span));
                     }
                     if !self.cx.is_finalizer_safe(ty) {
-                        let err = FinalizerErrorKind::NotFinalizerSafe(ty, span);
-                        err.emit(self.cx);
+                        self.errors.push(FinalizerErrorKind::NotFinalizerSafe(ty, span));
                     }
                 }
                 _ => (),
