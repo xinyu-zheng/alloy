@@ -1,4 +1,3 @@
-
 struct HasDrop;
 
 impl Drop for HasDrop {

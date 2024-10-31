@@ -9,6 +9,7 @@
 
 use core::cmp::{self, Ordering};
 use core::fmt;
+use core::gc::DropMethodFinalizerElidable;
 use core::hash::{Hash, Hasher};
 use core::iter::{repeat_n, repeat_with, ByRefSized};
 use core::mem::{ManuallyDrop, SizedTypeProperties};
@@ -122,6 +123,9 @@ impl<T: Clone, A: Allocator + Clone> Clone for VecDeque<T, A> {
         self.extend(source.iter().cloned());
     }
 }
+
+#[unstable(feature = "gc", issue = "none")]
+unsafe impl<T, A: Allocator> DropMethodFinalizerElidable for VecDeque<T, A> {}
 
 #[stable(feature = "rust1", since = "1.0.0")]
 unsafe impl<#[may_dangle] T, A: Allocator> Drop for VecDeque<T, A> {
