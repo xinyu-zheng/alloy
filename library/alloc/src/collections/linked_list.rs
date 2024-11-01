@@ -14,6 +14,7 @@
 
 use core::cmp::Ordering;
 use core::fmt;
+use core::gc::DropMethodFinalizerElidable;
 use core::hash::{Hash, Hasher};
 use core::iter::FusedIterator;
 use core::marker::PhantomData;
@@ -1165,6 +1166,9 @@ impl<T, A: Allocator> LinkedList<T, A> {
         ExtractIf { list: self, it, pred: filter, idx: 0, old_len }
     }
 }
+
+#[unstable(feature = "gc", issue = "none")]
+unsafe impl<T, A: Allocator> DropMethodFinalizerElidable for LinkedList<T, A> {}
 
 #[stable(feature = "rust1", since = "1.0.0")]
 unsafe impl<#[may_dangle] T, A: Allocator> Drop for LinkedList<T, A> {
