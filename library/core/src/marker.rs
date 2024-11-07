@@ -623,6 +623,11 @@ impl<T: ?Sized> !FinalizerSafe for *const T {}
 #[unstable(feature = "gc", issue = "none")]
 impl<T: ?Sized> !FinalizerSafe for *mut T {}
 
+#[unstable(feature = "gc", issue = "none")]
+impl<T: ?Sized> !FinalizerSafe for &T {}
+#[unstable(feature = "gc", issue = "none")]
+impl<T: ?Sized> !FinalizerSafe for &mut T {}
+
 /// Zero-sized type used to mark things that "act like" they own a `T`.
 ///
 /// Adding a `PhantomData<T>` field to your type tells the compiler that your
