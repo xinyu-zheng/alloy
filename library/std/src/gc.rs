@@ -560,7 +560,7 @@ impl<T> GcBox<MaybeUninit<T>> {
 
 #[cfg(not(no_global_oom_handling))]
 #[unstable(feature = "gc", issue = "none")]
-impl<T: Default + Send + Sync + ReferenceFree> Default for Gc<T> {
+impl<T: Default + Send + Sync> Default for Gc<T> {
     /// Creates a new `Gc<T>`, with the `Default` value for `T`.
     ///
     /// # Examples
