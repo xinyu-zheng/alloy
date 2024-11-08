@@ -933,6 +933,11 @@ pub const BUILTIN_ATTRIBUTES: &[BuiltinAttribute] = &[
         rustc_intrinsic_must_be_overridden, Normal, template!(Word), ErrorFollowing, EncodeCrossCrate::Yes,
         "the `#[rustc_intrinsic_must_be_overridden]` attribute is used to declare intrinsics without real bodies",
     ),
+    rustc_attr!(
+        rustc_fsa_entry_point, Normal, template!(Word), ErrorFollowing,
+        EncodeCrossCrate::Yes,
+        "#[rustc_fsa_entry_point] is used to determine when types should be checked by finaliser safety analysis."
+    ),
 
     // ==========================================================================
     // Internal attributes, Testing:
