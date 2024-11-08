@@ -368,6 +368,7 @@
 #![feature(get_mut_unchecked)]
 #![feature(map_try_insert)]
 #![feature(new_uninit)]
+#![feature(set_ptr_value)]
 #![feature(slice_concat_trait)]
 #![feature(thin_box)]
 #![feature(try_reserve_kind)]
