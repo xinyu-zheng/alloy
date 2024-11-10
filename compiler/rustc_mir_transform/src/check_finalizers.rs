@@ -33,10 +33,10 @@ enum FinalizerErrorKind<'tcx> {
 }
 
 impl<'tcx> FinalizerErrorKind<'tcx> {
-    fn emit(&self, cx: &FinalizationCtxt<'tcx>) {
-        let snippet = cx.tcx.sess.source_map().span_to_snippet(cx.arg_span).unwrap();
-        let mut err = cx.tcx.sess.psess.dcx.struct_span_err(
-            cx.arg_span,
+    fn emit(&self, ecx: &FSAEntryPointCtxt<'tcx>) {
+        let snippet = ecx.tcx.sess.source_map().span_to_snippet(ecx.arg_span).unwrap();
+        let mut err = ecx.tcx.sess.psess.dcx.struct_span_err(
+            ecx.arg_span,
             format!("`{snippet}` has a drop method which cannot be safely finalized."),
         );
         match self {
@@ -47,14 +47,14 @@ impl<'tcx> FinalizerErrorKind<'tcx> {
             }
             Self::NotFinalizerSafe(ty, span) => {
                 // Special-case `Gc` types for more friendly errors
-                if ty.is_gc(cx.tcx) {
+                if ty.is_gc(ecx.tcx) {
                     err.span_label(
                         *span,
                         "caused by the expression here in `fn drop(&mut)` because",
                     );
                     err.span_label(*span, "it uses another `Gc` type.");
                     err.span_label(
-                        cx.fn_span,
+                        ecx.fn_span,
                         format!("Finalizers cannot safely dereference other `Gc`s, because they might have already been finalised."),
                     );
                 } else {
@@ -68,7 +68,7 @@ impl<'tcx> FinalizerErrorKind<'tcx> {
                     );
                     err.help("`Gc` runs finalizers on a separate thread, so drop methods\nmust only use values whose types implement `FinalizerSafe`.");
                     err.span_label(
-                        cx.fn_span,
+                        ecx.fn_span,
                         format!(
                             "`Gc::new` requires that {ty} implements the `FinalizeSafe` trait.",
                         ),
@@ -84,11 +84,11 @@ impl<'tcx> FinalizerErrorKind<'tcx> {
                 err.help("`Gc` may run finalizers after the valid lifetime of this reference.");
             }
             Self::MissingFnDef => {
-                err.span_label(cx.arg_span, "contains a function call which may be unsafe.");
+                err.span_label(ecx.arg_span, "contains a function call which may be unsafe.");
             }
             Self::UnknownTraitObject => {
                 err.span_label(
-                    cx.arg_span,
+                    ecx.arg_span,
                     "contains a trait object whose implementation is unknown.",
                 );
             }
@@ -162,7 +162,7 @@ impl<'tcx> MirPass<'tcx> for CheckFinalizers {
 
             assert_eq!(args.len(), 1);
             let arg_ty = args[0].node.ty(body, tcx);
-            FinalizationCtxt::new(source_info.span, args[0].span, arg_ty, tcx, param_env)
+            FSAEntryPointCtxt::new(source_info.span, args[0].span, arg_ty, tcx, param_env)
                 .check_drop_glue();
         }
     }
@@ -170,7 +170,7 @@ impl<'tcx> MirPass<'tcx> for CheckFinalizers {
 
 /// The central data structure for performing FSA. Constructed and used each time a new FSA
 /// entry-point is found in the MIR (e.g. a call to `Gc::new` or `Gc::from`).
-struct FinalizationCtxt<'tcx> {
+struct FSAEntryPointCtxt<'tcx> {
     /// Span of the entry point.
     fn_span: Span,
     /// Span of the argument to the entry point.
@@ -182,7 +182,7 @@ struct FinalizationCtxt<'tcx> {
     param_env: ParamEnv<'tcx>,
 }
 
-impl<'tcx> FinalizationCtxt<'tcx> {
+impl<'tcx> FSAEntryPointCtxt<'tcx> {
     fn new(
         fn_span: Span,
         arg_span: Span,
@@ -333,16 +333,16 @@ impl<'tcx> FinalizationCtxt<'tcx> {
     }
 }
 
-struct DropMethodChecker<'a, 'tcx> {
-    body: &'a Body<'tcx>,
-    cx: &'a FinalizationCtxt<'tcx>,
+struct DropMethodChecker<'ecx, 'tcx> {
+    body: &'ecx Body<'tcx>,
+    ecx: &'ecx FSAEntryPointCtxt<'tcx>,
     errors: Vec<FinalizerErrorKind<'tcx>>,
     error_locs: FxHashSet<Location>,
 }
 
-impl<'a, 'tcx> DropMethodChecker<'a, 'tcx> {
-    fn new(body: &'a Body<'tcx>, fctxt: &'a FinalizationCtxt<'tcx>) -> Self {
-        Self { body, cx: fctxt, errors: Vec::new(), error_locs: FxHashSet::default() }
+impl<'ecx, 'tcx> DropMethodChecker<'ecx, 'tcx> {
+    fn new(body: &'ecx Body<'tcx>, ecx: &'ecx FSAEntryPointCtxt<'tcx>) -> Self {
+        Self { body, ecx, errors: Vec::new(), error_locs: FxHashSet::default() }
     }
 
     fn check(mut self) -> Result<(), Vec<FinalizerErrorKind<'tcx>>> {
@@ -360,7 +360,7 @@ impl<'a, 'tcx> DropMethodChecker<'a, 'tcx> {
     }
 }
 
-impl<'a, 'tcx> Visitor<'tcx> for DropMethodChecker<'a, 'tcx> {
+impl<'ecx, 'tcx> Visitor<'tcx> for DropMethodChecker<'ecx, 'tcx> {
     fn visit_projection(
         &mut self,
         place_ref: PlaceRef<'tcx>,
@@ -372,11 +372,11 @@ impl<'a, 'tcx> Visitor<'tcx> for DropMethodChecker<'a, 'tcx> {
         // checked.
         for ty in place_ref
             .iter_projections()
-            .filter_map(|(base, elem)| self.cx.extract_projection_ty(self.body, base, elem))
+            .filter_map(|(base, elem)| self.ecx.extract_projection_ty(self.body, base, elem))
         {
             let span = self.body.source_info(location).span;
-            if !ty.is_send(self.cx.tcx, self.cx.param_env)
-                || !ty.is_sync(self.cx.tcx, self.cx.param_env)
+            if !ty.is_send(self.ecx.tcx, self.ecx.param_env)
+                || !ty.is_sync(self.ecx.tcx, self.ecx.param_env)
             {
                 self.push_error(location, FinalizerErrorKind::NotSendAndSync(span));
                 break;
@@ -392,7 +392,7 @@ impl<'a, 'tcx> Visitor<'tcx> for DropMethodChecker<'a, 'tcx> {
                 self.push_error(location, FinalizerErrorKind::UnsoundReference(ty, span));
                 break;
             }
-            if !ty.is_finalizer_safe(self.cx.tcx, self.cx.param_env) {
+            if !ty.is_finalizer_safe(self.ecx.tcx, self.ecx.param_env) {
                 self.push_error(location, FinalizerErrorKind::NotFinalizerSafe(ty, span));
                 break;
             }
@@ -405,7 +405,7 @@ impl<'a, 'tcx> Visitor<'tcx> for DropMethodChecker<'a, 'tcx> {
             for caller_arg in self.body.args_iter() {
                 let recv_ty = self.body.local_decls()[caller_arg].ty;
                 for arg in args.iter() {
-                    let arg_ty = arg.node.ty(self.body, self.cx.tcx);
+                    let arg_ty = arg.node.ty(self.body, self.ecx.tcx);
                     if arg_ty == recv_ty {
                         // Currently, we do not recurse into function calls
                         // to see whether they access `!FinalizerSafe`
