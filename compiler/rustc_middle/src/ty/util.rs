@@ -1219,7 +1219,16 @@ impl<'tcx> Ty<'tcx> {
 
     pub fn is_gc(self, tcx: TyCtxt<'tcx>) -> bool {
         if let ty::Adt(adt_def, ..) = self.kind() {
-            return tcx.get_diagnostic_item(sym::gc).map_or(false, |gc| adt_def.did() == gc);
+            return tcx.get_diagnostic_item(sym::gc).map_or(false, |t| adt_def.did() == t);
+        }
+        return false;
+    }
+
+    pub fn is_finalize_unchecked(self, tcx: TyCtxt<'tcx>) -> bool {
+        if let ty::Adt(adt_def, ..) = self.kind() {
+            return tcx
+                .get_diagnostic_item(sym::FinalizeUnchecked)
+                .map_or(false, |t| adt_def.did() == t);
         }
         return false;
     }
@@ -1241,6 +1250,18 @@ impl<'tcx> Ty<'tcx> {
         param_env: ty::ParamEnv<'tcx>,
     ) -> bool {
         tcx.drop_method_finalizer_elidable_raw(param_env.and(self))
+    }
+
+    pub fn is_finalizer_safe(self, tcx: TyCtxt<'tcx>, param_env: ty::ParamEnv<'tcx>) -> bool {
+        tcx.is_finalizer_safe_raw(param_env.and(self))
+    }
+
+    pub fn is_send(self, tcx: TyCtxt<'tcx>, param_env: ty::ParamEnv<'tcx>) -> bool {
+        tcx.is_send_raw(param_env.and(self))
+    }
+
+    pub fn is_sync(self, tcx: TyCtxt<'tcx>, param_env: ty::ParamEnv<'tcx>) -> bool {
+        tcx.is_sync_raw(param_env.and(self))
     }
 
     /// Fast path helper for testing if a type is `Freeze`.
