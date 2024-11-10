@@ -4,6 +4,7 @@ use rustc_hir::lang_items::LangItem;
 use rustc_infer::infer::TyCtxtInferExt;
 use rustc_middle::query::Providers;
 use rustc_middle::ty::{self, Ty, TyCtxt};
+use rustc_span::{sym, Symbol};
 use rustc_trait_selection::traits;
 
 fn is_copy_raw<'tcx>(tcx: TyCtxt<'tcx>, query: ty::ParamEnvAnd<'tcx, Ty<'tcx>>) -> bool {
@@ -29,6 +30,29 @@ fn drop_method_finalizer_elidable_raw<'tcx>(
     is_item_raw(tcx, query, LangItem::DropMethodFinalizerElidable)
 }
 
+fn is_finalizer_safe_raw<'tcx>(tcx: TyCtxt<'tcx>, query: ty::ParamEnvAnd<'tcx, Ty<'tcx>>) -> bool {
+    is_diagnostic_item_raw(tcx, query, sym::FinalizerSafe)
+}
+
+fn is_send_raw<'tcx>(tcx: TyCtxt<'tcx>, query: ty::ParamEnvAnd<'tcx, Ty<'tcx>>) -> bool {
+    is_diagnostic_item_raw(tcx, query, sym::Send)
+}
+
+fn is_sync_raw<'tcx>(tcx: TyCtxt<'tcx>, query: ty::ParamEnvAnd<'tcx, Ty<'tcx>>) -> bool {
+    is_diagnostic_item_raw(tcx, query, sym::Sync)
+}
+
+fn is_diagnostic_item_raw<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    query: ty::ParamEnvAnd<'tcx, Ty<'tcx>>,
+    item: Symbol,
+) -> bool {
+    let (param_env, ty) = query.into_parts();
+    let trait_def_id = tcx.get_diagnostic_item(item).unwrap();
+    let infcx = tcx.infer_ctxt().build();
+    traits::type_known_to_meet_bound_modulo_regions(&infcx, param_env, ty, trait_def_id)
+}
+
 fn is_item_raw<'tcx>(
     tcx: TyCtxt<'tcx>,
     query: ty::ParamEnvAnd<'tcx, Ty<'tcx>>,
@@ -44,6 +68,9 @@ pub(crate) fn provide(providers: &mut Providers) {
     *providers = Providers {
         is_copy_raw,
         is_sized_raw,
+        is_send_raw,
+        is_sync_raw,
+        is_finalizer_safe_raw,
         is_freeze_raw,
         is_unpin_raw,
         drop_method_finalizer_elidable_raw,
