@@ -1415,7 +1415,7 @@ impl<'tcx> Ty<'tcx> {
     /// If `ty.needs_finalizer(...)` returns `true`, then `ty` is definitely
     /// non-copy and *might* have a destructor attached; if it returns
     /// `false`, then `ty` definitely has no destructor (i.e., no drop glue)
-    /// *or* `ty` implements the `NoFinalize` trait.
+    /// *or* `ty` implements the `DropMethodFinalizerElidable` trait.
     ///
     /// (Note that this implies that if `ty` has a destructor attached,
     /// then `needs_drop` will definitely return `true` for `ty`.)
