@@ -4,11 +4,11 @@ use rustc_span::sym;
 
 use super::simplify::simplify_cfg;
 
-pub struct RemoveGcDrops;
+pub struct RemoveElidableDrops;
 
-impl<'tcx> MirPass<'tcx> for RemoveGcDrops {
+impl<'tcx> MirPass<'tcx> for RemoveElidableDrops {
     fn run_pass(&self, tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) {
-        trace!("Running RemoveGcDrops on {:?}", body.source);
+        trace!("Running RemoveElidableDrops on {:?}", body.source);
 
         let is_gc_crate = tcx
             .get_diagnostic_item(sym::gc)
