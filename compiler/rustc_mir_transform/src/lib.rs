@@ -95,7 +95,7 @@ mod nrvo;
 mod prettify;
 mod promote_consts;
 mod ref_prop;
-mod remove_gc_drops;
+mod remove_elidable_drops;
 mod remove_noop_landing_pads;
 mod remove_storage_markers;
 mod remove_uninit_drops;
@@ -617,7 +617,7 @@ fn run_optimization_passes<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) {
             &deduplicate_blocks::DeduplicateBlocks,
             &large_enums::EnumSizeOpt { discrepancy: 128 },
             // Must come before CriticalCallEdges to prevent LLVM basic block ordering errors.
-            &remove_gc_drops::RemoveGcDrops,
+            &remove_elidable_drops::RemoveElidableDrops,
             // Some cleanup necessary at least for LLVM and potentially other codegen backends.
             &add_call_guards::CriticalCallEdges,
             // Cleanup for human readability, off by default.
