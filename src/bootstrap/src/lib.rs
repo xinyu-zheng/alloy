@@ -740,6 +740,9 @@ impl Build {
         if self.config.backtrace {
             features.push_str(" backtrace");
         }
+        if self.config.log_alloy_stats {
+            features.push_str(" log-alloy-stats");
+        }
         if self.config.profiler_enabled(target) {
             features.push_str(" profiler");
         }

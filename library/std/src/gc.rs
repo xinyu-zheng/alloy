@@ -56,40 +56,14 @@ use core::slice::from_raw_parts_mut;
 
 pub use core::gc::*;
 
-#[cfg(profile_gc)]
-use core::sync::atomic::{self, AtomicU64};
+#[cfg(feature = "log-alloy-stats")]
+use core::sync::atomic;
 
-use core::sync::atomic::{self, AtomicU64};
+#[cfg(feature = "log-alloy-stats")]
+use crate::alloc::GC_COUNTERS;
 
 #[cfg(test)]
 mod tests;
-
-#[derive(Default)]
-struct GcCounters {
-    finalizers_registered: AtomicU64,
-    allocated_gc: AtomicU64,
-    allocated_normal: AtomicU64,
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct GcStats {
-    pub finalizers_registered: u64,
-    pub finalizers_completed: u64,
-    pub allocated_gc: u64,
-    pub allocated_normal: u64,
-    pub num_gcs: u64,
-}
-
-static GC_COUNTERS: GcCounters = GcCounters {
-    finalizers_registered: AtomicU64::new(0),
-    allocated_gc: AtomicU64::new(0),
-    allocated_normal: AtomicU64::new(0),
-};
-
-#[cfg(profile_gc)]
-static FINALIZERS_REGISTERED: AtomicU64 = AtomicU64::new(0);
-#[cfg(profile_gc)]
-static FINALIZERS_COMPLETED: AtomicU64 = AtomicU64::new(0);
 
 ////////////////////////////////////////////////////////////////////////////////
 // BDWGC Allocator
@@ -104,7 +78,6 @@ pub struct GcAllocator;
 unsafe impl GlobalAlloc for GcAllocator {
     #[inline]
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        GC_COUNTERS.allocated_normal.fetch_add(1, atomic::Ordering::Relaxed);
         unsafe { gc_malloc(layout) }
     }
 
@@ -164,6 +137,7 @@ unsafe fn gc_free(ptr: *mut u8, _: Layout) {
 unsafe impl Allocator for GcAllocator {
     #[inline]
     fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+        #[cfg(feature = "log-alloy-stats")]
         GC_COUNTERS.allocated_gc.fetch_add(1, atomic::Ordering::Relaxed);
         match layout.size() {
             0 => Ok(NonNull::slice_from_raw_parts(layout.dangling(), 0)),
@@ -184,15 +158,30 @@ impl GcAllocator {
     }
 }
 
+#[cfg(feature = "log-alloy-stats")]
+#[derive(Debug, Copy, Clone)]
+pub struct GcStats {
+    pub finalizers_registered: u64,
+    pub finalizers_completed: u64,
+    pub allocated_gc: u64,
+    pub allocated_boxed: u64,
+    pub allocated_arc: u64,
+    pub allocated_rc: u64,
+    pub num_gcs: u64,
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Free functions
 ////////////////////////////////////////////////////////////////////////////////
+#[cfg(feature = "log-alloy-stats")]
 pub fn stats() -> GcStats {
     GcStats {
         finalizers_registered: GC_COUNTERS.finalizers_registered.load(atomic::Ordering::Relaxed),
         finalizers_completed: unsafe { bdwgc::GC_finalized_total() },
         allocated_gc: GC_COUNTERS.allocated_gc.load(atomic::Ordering::Relaxed),
-        allocated_normal: GC_COUNTERS.allocated_normal.load(atomic::Ordering::Relaxed),
+        allocated_boxed: GC_COUNTERS.allocated_boxed.load(atomic::Ordering::Relaxed),
+        allocated_rc: GC_COUNTERS.allocated_rc.load(atomic::Ordering::Relaxed),
+        allocated_arc: GC_COUNTERS.allocated_arc.load(atomic::Ordering::Relaxed),
         num_gcs: unsafe { bdwgc::GC_get_gc_no() },
     }
 }
@@ -530,6 +519,7 @@ impl<T> Gc<T> {
                 ptr::null_mut(),
             );
         }
+        #[cfg(feature = "log-alloy-stats")]
         GC_COUNTERS.finalizers_registered.fetch_add(1, atomic::Ordering::Relaxed);
         Self::from_inner(ptr.into())
     }

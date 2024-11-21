@@ -15,6 +15,32 @@ pub use core::alloc::*;
 #[cfg(test)]
 mod tests;
 
+#[cfg(feature = "log-alloy-stats")]
+use core::sync::atomic::AtomicU64;
+
+#[cfg(feature = "log-alloy-stats")]
+#[unstable(feature = "gc", issue = "none")]
+/// Global counters for various GC stats.
+pub static GC_COUNTERS: GcCounters = GcCounters {
+    finalizers_registered: AtomicU64::new(0),
+    allocated_gc: AtomicU64::new(0),
+    allocated_boxed: AtomicU64::new(0),
+    allocated_rc: AtomicU64::new(0),
+    allocated_arc: AtomicU64::new(0),
+};
+
+#[cfg(feature = "log-alloy-stats")]
+#[unstable(feature = "gc", issue = "none")]
+#[allow(missing_docs)]
+#[derive(Debug, Default)]
+pub struct GcCounters {
+    pub finalizers_registered: AtomicU64,
+    pub allocated_gc: AtomicU64,
+    pub allocated_boxed: AtomicU64,
+    pub allocated_rc: AtomicU64,
+    pub allocated_arc: AtomicU64,
+}
+
 extern "Rust" {
     // These are the magic symbols to call the global allocator. rustc generates
     // them to call `__rg_alloc` etc. if there is a `#[global_allocator]` attribute

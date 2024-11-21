@@ -43,6 +43,9 @@ use crate::string::String;
 #[cfg(not(no_global_oom_handling))]
 use crate::vec::Vec;
 
+#[cfg(feature = "log-alloy-stats")]
+use crate::alloc::GC_COUNTERS;
+
 #[cfg(test)]
 mod tests;
 
@@ -714,6 +717,12 @@ impl<T, A: Allocator> Arc<T, A> {
     pub fn new_in(data: T, alloc: A) -> Arc<T, A> {
         // Start the weak pointer count as 1 which is the weak pointer that's
         // held by all the strong pointers (kinda), see std/rc.rs for more info
+        #[cfg(feature = "log-alloy-stats")]
+        {
+            GC_COUNTERS.allocated_arc.fetch_add(1, Relaxed);
+            // Decrement because `Arc` uses the global allocator.
+            GC_COUNTERS.allocated_boxed.fetch_sub(1, Relaxed);
+        }
         let x = Box::new_in(
             ArcInner {
                 strong: atomic::AtomicUsize::new(1),
@@ -754,6 +763,10 @@ impl<T, A: Allocator> Arc<T, A> {
     // #[unstable(feature = "new_uninit", issue = "63291")]
     #[inline]
     pub fn new_uninit_in(alloc: A) -> Arc<mem::MaybeUninit<T>, A> {
+        #[cfg(feature = "log-alloy-stats")]
+        GC_COUNTERS.allocated_arc.fetch_add(1, atomic::Ordering::Relaxed);
+        #[cfg(feature = "log-alloy-stats")]
+        GC_COUNTERS.allocated_boxed.fetch_sub(1, atomic::Ordering::Relaxed);
         unsafe {
             Arc::from_ptr_in(
                 Arc::allocate_for_layout(
