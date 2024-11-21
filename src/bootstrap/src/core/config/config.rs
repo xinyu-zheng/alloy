@@ -306,6 +306,8 @@ pub struct Config {
     // libstd features
     pub backtrace: bool, // support for RUST_BACKTRACE
 
+    pub log_alloy_stats: bool, // support for LOG_ALLOY_STATS
+
     // misc
     pub low_priority: bool,
     pub channel: String,
@@ -1090,6 +1092,7 @@ define_config! {
         debuginfo_level_tests: Option<DebuginfoLevel> = "debuginfo-level-tests",
         split_debuginfo: Option<String> = "split-debuginfo",
         backtrace: Option<bool> = "backtrace",
+        log_alloy_stats: Option<bool> = "log-alloy-stats",
         incremental: Option<bool> = "incremental",
         parallel_compiler: Option<bool> = "parallel-compiler",
         default_linker: Option<String> = "default-linker",
@@ -1167,6 +1170,7 @@ impl Config {
             ninja_in_file: true,
             llvm_static_stdcpp: false,
             backtrace: true,
+            log_alloy_stats: false,
             rust_optimize: RustOptimize::Bool(true),
             rust_optimize_tests: true,
             submodules: None,
@@ -1575,6 +1579,7 @@ impl Config {
                 debuginfo_level_tests: debuginfo_level_tests_toml,
                 split_debuginfo,
                 backtrace,
+                log_alloy_stats,
                 incremental,
                 parallel_compiler,
                 default_linker,
@@ -1669,6 +1674,7 @@ impl Config {
             set(&mut config.jemalloc, jemalloc);
             set(&mut config.test_compare_mode, test_compare_mode);
             set(&mut config.backtrace, backtrace);
+            set(&mut config.log_alloy_stats, log_alloy_stats);
             config.description = description;
             set(&mut config.rust_dist_src, dist_src);
             set(&mut config.verbose_tests, verbose_tests);

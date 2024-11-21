@@ -108,6 +108,34 @@ unsafe fn init(argc: isize, argv: *const *const u8, sigpipe: u8) {
     }
 }
 
+#[cfg(feature = "log-alloy-stats")]
+pub(crate) fn log_stats() {
+    if crate::env::var("ALLOY_LOG").is_err() {
+        return;
+    }
+
+    use crate::io::Write;
+    let mut filename = crate::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .append(true)
+        .open(crate::env::var("ALLOY_LOG").unwrap())
+        .unwrap();
+
+    let headers =
+        "finalizers registered,finalizers completed,GC allocated,boxed allocated,GC cycles";
+    let stats = crate::gc::stats();
+    let stats = format!(
+        "{},{},{},{},{}\n",
+        stats.finalizers_registered,
+        stats.finalizers_completed,
+        stats.allocated_gc,
+        stats.allocated_boxed,
+        stats.num_gcs
+    );
+    write!(filename, "{}", format!("{headers}\n{stats}")).unwrap();
+}
+
 // One-time runtime cleanup.
 // Runs after `main` or at program exit.
 // NOTE: this is not guaranteed to run, for example when the program aborts.
@@ -170,5 +198,7 @@ fn lang_start<T: crate::process::Termination + 'static>(
         argv,
         sigpipe,
     );
+    #[cfg(feature = "log-alloy-stats")]
+    crate::rt::log_stats();
     v
 }

@@ -72,6 +72,8 @@ backtrace = [
 ]
 gimli-symbolize = []
 
+log-alloy-stats = ["alloc/log-alloy-stats"]
+
 panic-unwind = ["panic_unwind"]
 profiler = ["profiler_builtins"]
 compiler-builtins-c = ["alloc/compiler-builtins-c"]

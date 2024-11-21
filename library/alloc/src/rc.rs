@@ -279,6 +279,12 @@ use crate::string::String;
 #[cfg(not(no_global_oom_handling))]
 use crate::vec::Vec;
 
+#[cfg(feature = "log-alloy-stats")]
+use crate::alloc::GC_COUNTERS;
+
+#[cfg(feature = "log-alloy-stats")]
+use core::sync::atomic;
+
 #[cfg(test)]
 mod tests;
 
@@ -392,6 +398,10 @@ impl<T> Rc<T> {
     #[cfg(not(no_global_oom_handling))]
     #[stable(feature = "rust1", since = "1.0.0")]
     pub fn new(value: T) -> Rc<T> {
+        #[cfg(feature = "log-alloy-stats")]
+        GC_COUNTERS.allocated_rc.fetch_add(1, atomic::Ordering::Relaxed);
+        #[cfg(feature = "log-alloy-stats")]
+        GC_COUNTERS.allocated_boxed.fetch_sub(1, atomic::Ordering::Relaxed);
         // There is an implicit weak pointer owned by all the strong
         // pointers, which ensures that the weak destructor never frees
         // the allocation while the strong destructor is running, even
@@ -522,6 +532,12 @@ impl<T> Rc<T> {
     #[unstable(feature = "new_uninit", issue = "63291")]
     #[must_use]
     pub fn new_uninit() -> Rc<mem::MaybeUninit<T>> {
+        #[cfg(feature = "log-alloy-stats")]
+        {
+            GC_COUNTERS.allocated_rc.fetch_add(1, atomic::Ordering::Relaxed);
+            // Decrement because `Rc` uses the global allocator.
+            GC_COUNTERS.allocated_boxed.fetch_sub(1, atomic::Ordering::Relaxed);
+        }
         unsafe {
             Rc::from_ptr(Rc::allocate_for_layout(
                 Layout::new::<T>(),
