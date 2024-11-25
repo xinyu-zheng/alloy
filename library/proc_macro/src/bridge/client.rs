@@ -189,7 +189,6 @@ struct Bridge<'a> {
 
 impl<'a> !Send for Bridge<'a> {}
 impl<'a> !Sync for Bridge<'a> {}
-impl<'a> !FinalizerSafe for Bridge<'a> {}
 
 #[allow(unsafe_code)]
 mod state {

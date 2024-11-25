@@ -56,9 +56,7 @@ impl<T: ?Sized> DerefMut for NonFinalizable<T> {
 /// violations.
 ///
 /// However, where this is too strict -- and the user knows T::drop to be sound
-/// -- `FinalizeUnchecked` can be used to opt-out of FSA. This is preferable to
-/// implementing the `FinalizerSafe` trait for `T` as `FinalizeUnchecked`
-/// applies only to individual uses of `T`.
+/// -- `FinalizeUnchecked` can be used to opt-out of FSA.
 #[unstable(feature = "gc", issue = "none")]
 #[cfg_attr(not(test), rustc_diagnostic_item = "FinalizeUnchecked")]
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -88,4 +86,4 @@ impl<T: ?Sized> DerefMut for FinalizeUnchecked<T> {
 }
 
 #[cfg(not(bootstrap))]
-unsafe impl<T> FinalizerSafe for FinalizeUnchecked<T> {}
+unsafe impl<T> core::marker::FinalizerSafe for FinalizeUnchecked<T> {}

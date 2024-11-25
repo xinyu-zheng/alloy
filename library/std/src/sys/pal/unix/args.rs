@@ -25,7 +25,6 @@ pub struct Args {
 
 impl !Send for Args {}
 impl !Sync for Args {}
-impl !FinalizerSafe for Args {}
 
 impl fmt::Debug for Args {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

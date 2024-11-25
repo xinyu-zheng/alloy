@@ -238,7 +238,7 @@ unsafe impl<T: ?Sized + Sync + Send> Sync for Gc<T> {}
 //
 // FIXME: Make this conditional based on whether -DTOPOLOGICAL_FINALIZATION flag
 // is passed to the compiler.
-impl<T: ?Sized> !FinalizerSafe for Gc<T> {}
+impl<T: ?Sized> !core::marker::FinalizerSafe for Gc<T> {}
 
 #[unstable(feature = "gc", issue = "none")]
 impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<Gc<U>> for Gc<T> {}

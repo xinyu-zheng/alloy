@@ -16,7 +16,6 @@ pub struct Buffer {
 
 unsafe impl Sync for Buffer {}
 unsafe impl Send for Buffer {}
-unsafe impl FinalizerSafe for Buffer {}
 
 impl Default for Buffer {
     #[inline]

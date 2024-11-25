@@ -619,11 +619,6 @@ pub unsafe auto trait FinalizerSafe {
 }
 
 #[unstable(feature = "gc", issue = "none")]
-impl<T: ?Sized> !FinalizerSafe for *const T {}
-#[unstable(feature = "gc", issue = "none")]
-impl<T: ?Sized> !FinalizerSafe for *mut T {}
-
-#[unstable(feature = "gc", issue = "none")]
 impl<T: ?Sized> !FinalizerSafe for &T {}
 #[unstable(feature = "gc", issue = "none")]
 impl<T: ?Sized> !FinalizerSafe for &mut T {}
