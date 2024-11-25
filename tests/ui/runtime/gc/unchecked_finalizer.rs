@@ -17,8 +17,6 @@ impl Drop for UnsafeContainer {
     }
 }
 
-impl !FinalizerSafe for UnsafeContainer {}
-
 static FINALIZER_COUNT: AtomicUsize = AtomicUsize::new(0);
 static ALLOCATED_COUNT: usize = 10;
 static SLEEP_MAX: u64 = 8192; // in millis.
