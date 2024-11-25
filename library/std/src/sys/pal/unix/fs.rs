@@ -289,7 +289,6 @@ struct Dir(*mut libc::DIR);
 
 unsafe impl Send for Dir {}
 unsafe impl Sync for Dir {}
-unsafe impl FinalizerSafe for Dir {}
 
 #[cfg(any(
     target_os = "android",
