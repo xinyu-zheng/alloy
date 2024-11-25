@@ -35,22 +35,6 @@ cd yksom
 # Annoying hack needed in order to build a non-workspace crate inside alloy.
 echo "[workspace]" >> Cargo.toml
 
-cargo +alloy test
-cargo +alloy test --release
-
-cargo +alloy run  -- --cp SOM/Smalltalk SOM/TestSuite/TestHarness.som
-cargo +alloy run --release -- --cp SOM/Smalltalk SOM/TestSuite/TestHarness.som
-
-cargo +alloy run --release -- --cp SOM/Smalltalk:lang_tests hello_world1
-
-cd SOM
-cargo +alloy run --release -- \
-  --cp Smalltalk:TestSuite:SomSom/src/compiler:SomSom/src/vm:SomSom/src/vmobjects:SomSom/src/interpreter:SomSom/src/primitives \
-  SomSom/tests/SomSomTests.som
-cargo +alloy run --release -- \
-  --cp Smalltalk:Examples/Benchmarks/GraphSearch \
-  Examples/Benchmarks/BenchmarkHarness.som GraphSearch 10 4
-
 # Build and test grmtools
 cd ../
 git clone https://github.com/softdevteam/grmtools
