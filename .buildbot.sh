@@ -2,6 +2,8 @@
 #
 # Build script for continuous integration.
 
+YKSOMSV=4d3679fca1139876adccdbd9a27f110b91b229fa
+
 set -e
 
 # This is needed because Alloy is rebased on top of rustc, and we need enough
@@ -30,7 +32,7 @@ rustup toolchain link alloy build/x86_64-unknown-linux-gnu/stage1
 
 # Build and test yksom
 git clone --recursive https://github.com/softdevteam/yksom
-cd yksom
+cd yksom && git checkout $YKSOMSV
 
 # Annoying hack needed in order to build a non-workspace crate inside alloy.
 echo "[workspace]" >> Cargo.toml
