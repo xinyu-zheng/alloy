@@ -2,6 +2,8 @@
 #
 # Build script for continuous integration.
 
+YKSOMSV=4d3679fca1139876adccdbd9a27f110b91b229fa
+
 set -e
 
 # This is needed because Alloy is rebased on top of rustc, and we need enough
@@ -30,10 +32,26 @@ rustup toolchain link alloy build/x86_64-unknown-linux-gnu/stage1
 
 # Build and test yksom
 git clone --recursive https://github.com/softdevteam/yksom
-cd yksom
+cd yksom && git checkout $YKSOMSV
 
 # Annoying hack needed in order to build a non-workspace crate inside alloy.
 echo "[workspace]" >> Cargo.toml
+
+cargo +alloy test
+cargo +alloy test --release
+
+cargo +alloy run  -- --cp SOM/Smalltalk SOM/TestSuite/TestHarness.som
+cargo +alloy run --release -- --cp SOM/Smalltalk SOM/TestSuite/TestHarness.som
+
+cargo +alloy run --release -- --cp SOM/Smalltalk:lang_tests hello_world1
+
+cd SOM
+cargo +alloy run --release -- \
+  --cp Smalltalk:TestSuite:SomSom/src/compiler:SomSom/src/vm:SomSom/src/vmobjects:SomSom/src/interpreter:SomSom/src/primitives \
+  SomSom/tests/SomSomTests.som
+cargo +alloy run --release -- \
+  --cp Smalltalk:Examples/Benchmarks/GraphSearch \
+  Examples/Benchmarks/BenchmarkHarness.som GraphSearch 10 4
 
 # Build and test grmtools
 cd ../
