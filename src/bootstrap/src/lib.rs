@@ -740,9 +740,6 @@ impl Build {
         if self.config.backtrace {
             features.push_str(" backtrace");
         }
-        if self.config.log_alloy_stats {
-            features.push_str(" log-alloy-stats");
-        }
         if self.config.profiler_enabled(target) {
             features.push_str(" profiler");
         }
@@ -750,6 +747,11 @@ impl Build {
         // automatically detects this target.
         if target.contains("zkvm") {
             features.push_str(" compiler-builtins-mem");
+        }
+
+        // Alloy features
+        if self.config.log_stats {
+            features.push_str(" log-stats");
         }
         features
     }

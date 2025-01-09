@@ -56,10 +56,10 @@ use core::slice::from_raw_parts_mut;
 
 pub use core::gc::*;
 
-#[cfg(feature = "log-alloy-stats")]
+#[cfg(feature = "log-stats")]
 use core::sync::atomic;
 
-#[cfg(feature = "log-alloy-stats")]
+#[cfg(feature = "log-stats")]
 use crate::alloc::GC_COUNTERS;
 
 #[cfg(test)]
@@ -137,7 +137,7 @@ unsafe fn gc_free(ptr: *mut u8, _: Layout) {
 unsafe impl Allocator for GcAllocator {
     #[inline]
     fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
-        #[cfg(feature = "log-alloy-stats")]
+        #[cfg(feature = "log-stats")]
         GC_COUNTERS.allocated_gc.fetch_add(1, atomic::Ordering::Relaxed);
         match layout.size() {
             0 => Ok(NonNull::slice_from_raw_parts(layout.dangling(), 0)),
@@ -158,7 +158,7 @@ impl GcAllocator {
     }
 }
 
-#[cfg(feature = "log-alloy-stats")]
+#[cfg(feature = "log-stats")]
 #[derive(Debug, Copy, Clone)]
 pub struct GcStats {
     pub finalizers_registered: u64,
@@ -173,7 +173,7 @@ pub struct GcStats {
 ////////////////////////////////////////////////////////////////////////////////
 // Free functions
 ////////////////////////////////////////////////////////////////////////////////
-#[cfg(feature = "log-alloy-stats")]
+#[cfg(feature = "log-stats")]
 pub fn stats() -> GcStats {
     GcStats {
         finalizers_registered: GC_COUNTERS.finalizers_registered.load(atomic::Ordering::Relaxed),
@@ -519,7 +519,7 @@ impl<T> Gc<T> {
                 ptr::null_mut(),
             );
         }
-        #[cfg(feature = "log-alloy-stats")]
+        #[cfg(feature = "log-stats")]
         GC_COUNTERS.finalizers_registered.fetch_add(1, atomic::Ordering::Relaxed);
         Self::from_inner(ptr.into())
     }

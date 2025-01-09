@@ -15,10 +15,10 @@ pub use core::alloc::*;
 #[cfg(test)]
 mod tests;
 
-#[cfg(feature = "log-alloy-stats")]
+#[cfg(feature = "log-stats")]
 use core::sync::atomic::AtomicU64;
 
-#[cfg(feature = "log-alloy-stats")]
+#[cfg(feature = "log-stats")]
 #[unstable(feature = "gc", issue = "none")]
 /// Global counters for various GC stats.
 pub static GC_COUNTERS: GcCounters = GcCounters {
@@ -29,7 +29,7 @@ pub static GC_COUNTERS: GcCounters = GcCounters {
     allocated_arc: AtomicU64::new(0),
 };
 
-#[cfg(feature = "log-alloy-stats")]
+#[cfg(feature = "log-stats")]
 #[unstable(feature = "gc", issue = "none")]
 #[allow(missing_docs)]
 #[derive(Debug, Default)]

@@ -306,7 +306,8 @@ pub struct Config {
     // libstd features
     pub backtrace: bool, // support for RUST_BACKTRACE
 
-    pub log_alloy_stats: bool, // support for LOG_ALLOY_STATS
+    // alloy debug features
+    pub log_stats: bool, // support for LOG_ALLOY_STATS
 
     // misc
     pub low_priority: bool,
@@ -620,6 +621,7 @@ pub(crate) struct TomlConfig {
     install: Option<Install>,
     llvm: Option<Llvm>,
     rust: Option<Rust>,
+    alloy: Option<Alloy>,
     target: Option<HashMap<String, TomlTarget>>,
     dist: Option<Dist>,
     profile: Option<String>,
@@ -653,7 +655,7 @@ trait Merge {
 impl Merge for TomlConfig {
     fn merge(
         &mut self,
-        TomlConfig { build, install, llvm, rust, dist, target, profile: _, change_id }: Self,
+        TomlConfig { build, install, llvm, rust, alloy, dist, target, profile: _, change_id }: Self,
         replace: ReplaceOpt,
     ) {
         fn do_merge<T: Merge>(x: &mut Option<T>, y: Option<T>, replace: ReplaceOpt) {
@@ -670,6 +672,7 @@ impl Merge for TomlConfig {
         do_merge(&mut self.install, install, replace);
         do_merge(&mut self.llvm, llvm, replace);
         do_merge(&mut self.rust, rust, replace);
+        do_merge(&mut self.alloy, alloy, replace);
         do_merge(&mut self.dist, dist, replace);
         assert!(target.is_none(), "merging target-specific config is not currently supported");
     }
@@ -1092,7 +1095,6 @@ define_config! {
         debuginfo_level_tests: Option<DebuginfoLevel> = "debuginfo-level-tests",
         split_debuginfo: Option<String> = "split-debuginfo",
         backtrace: Option<bool> = "backtrace",
-        log_alloy_stats: Option<bool> = "log-alloy-stats",
         incremental: Option<bool> = "incremental",
         parallel_compiler: Option<bool> = "parallel-compiler",
         default_linker: Option<String> = "default-linker",
@@ -1135,6 +1137,13 @@ define_config! {
 }
 
 define_config! {
+    /// TOML representation of Alloy build configurations.
+    struct Alloy {
+        log_stats: Option<bool> = "log-stats",
+    }
+}
+
+define_config! {
     /// TOML representation of how each build target is configured.
     struct TomlTarget {
         cc: Option<String> = "cc",
@@ -1170,7 +1179,6 @@ impl Config {
             ninja_in_file: true,
             llvm_static_stdcpp: false,
             backtrace: true,
-            log_alloy_stats: false,
             rust_optimize: RustOptimize::Bool(true),
             rust_optimize_tests: true,
             submodules: None,
@@ -1201,6 +1209,8 @@ impl Config {
             },
             out: PathBuf::from("build"),
 
+            // alloy opts
+            log_stats: false,
             ..Default::default()
         }
     }
@@ -1579,7 +1589,6 @@ impl Config {
                 debuginfo_level_tests: debuginfo_level_tests_toml,
                 split_debuginfo,
                 backtrace,
-                log_alloy_stats,
                 incremental,
                 parallel_compiler,
                 default_linker,
@@ -1674,7 +1683,6 @@ impl Config {
             set(&mut config.jemalloc, jemalloc);
             set(&mut config.test_compare_mode, test_compare_mode);
             set(&mut config.backtrace, backtrace);
-            set(&mut config.log_alloy_stats, log_alloy_stats);
             config.description = description;
             set(&mut config.rust_dist_src, dist_src);
             set(&mut config.verbose_tests, verbose_tests);
@@ -1754,6 +1762,14 @@ impl Config {
         let default = config.channel == "dev";
         config.omit_git_hash = omit_git_hash.unwrap_or(default);
         config.rust_info = GitInfo::new(config.omit_git_hash, &config.src);
+
+        if let Some(alloy) = toml.alloy {
+            let Alloy {
+                log_stats,
+            } = alloy;
+
+            set(&mut config.log_stats, log_stats);
+        }
 
         if let Some(llvm) = toml.llvm {
             let Llvm {
