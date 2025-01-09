@@ -489,8 +489,17 @@ impl<T> Gc<T> {
     #[cfg(not(no_global_oom_handling))]
     unsafe fn new_internal(value: T) -> Self {
         #[cfg(not(bootstrap))]
-        if !crate::mem::needs_finalizer::<T>() {
-            return Self::from_inner(Box::leak(Box::new_in(GcBox { value }, GcAllocator)).into());
+        {
+            #[cfg(feature = "finalizer-elision")]
+            let needs_finalizer = crate::mem::needs_finalizer::<T>();
+            #[cfg(not(feature = "finalizer-elision"))]
+            let needs_finalizer = crate::mem::needs_drop::<T>();
+
+            if !needs_finalizer {
+                return Self::from_inner(
+                    Box::leak(Box::new_in(GcBox { value }, GcAllocator)).into(),
+                );
+            }
         }
 
         unsafe extern "C" fn finalizer_shim<T>(obj: *mut u8, _: *mut u8) {

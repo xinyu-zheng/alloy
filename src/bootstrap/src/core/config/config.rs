@@ -308,6 +308,7 @@ pub struct Config {
 
     // alloy debug features
     pub log_stats: bool, // support for LOG_ALLOY_STATS
+    pub finalizer_elision: bool,
 
     // misc
     pub low_priority: bool,
@@ -1140,6 +1141,7 @@ define_config! {
     /// TOML representation of Alloy build configurations.
     struct Alloy {
         log_stats: Option<bool> = "log-stats",
+        finalizer_elision: Option<bool> = "finalizer-elision",
     }
 }
 
@@ -1211,6 +1213,7 @@ impl Config {
 
             // alloy opts
             log_stats: false,
+            finalizer_elision: true,
             ..Default::default()
         }
     }
@@ -1766,9 +1769,11 @@ impl Config {
         if let Some(alloy) = toml.alloy {
             let Alloy {
                 log_stats,
+                finalizer_elision,
             } = alloy;
 
             set(&mut config.log_stats, log_stats);
+            set(&mut config.finalizer_elision, finalizer_elision);
         }
 
         if let Some(llvm) = toml.llvm {
