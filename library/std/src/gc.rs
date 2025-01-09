@@ -264,7 +264,7 @@ impl<T: ?Sized + Unsize<U>, U: ?Sized> DispatchFromDyn<Gc<U>> for Gc<T> {}
 /// away the reference too soon. This is a special implementation with compiler
 /// support, because it is usually impossible to allow both `Drop` and `Copy`
 /// traits to be implemented on a type simultaneously.
-#[cfg(all(not(bootstrap), not(test)))]
+#[cfg(all(not(bootstrap), not(test), feature = "premature-finalizer-prevention"))]
 impl<T: ?Sized> Drop for Gc<T> {
     fn drop(&mut self) {
         keep_alive(self);

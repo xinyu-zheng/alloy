@@ -30,3 +30,4 @@ std_detect_env_override = ["std/std_detect_env_override"]
 # Alloy debug flags
 log-stats = ["std/log-stats"]
 finalizer-elision = ["std/finalizer-elision"]
+premature-finalizer-prevention = ["std/premature-finalizer-prevention"]
