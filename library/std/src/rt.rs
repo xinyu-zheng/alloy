@@ -108,7 +108,7 @@ unsafe fn init(argc: isize, argv: *const *const u8, sigpipe: u8) {
     }
 }
 
-#[cfg(feature = "log-alloy-stats")]
+#[cfg(feature = "log-stats")]
 pub(crate) fn log_stats() {
     if crate::env::var("ALLOY_LOG").is_err() {
         return;
@@ -198,7 +198,7 @@ fn lang_start<T: crate::process::Termination + 'static>(
         argv,
         sigpipe,
     );
-    #[cfg(feature = "log-alloy-stats")]
+    #[cfg(feature = "log-stats")]
     crate::rt::log_stats();
     v
 }
