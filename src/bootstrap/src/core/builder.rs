@@ -1521,6 +1521,9 @@ impl<'a> Builder<'a> {
         if stage != 0 && !self.config.finalizer_elision {
             rustflags.arg("-Cno-finalizer-elision");
         }
+        if stage != 0 && !self.config.finalizer_safety_analysis {
+            rustflags.arg("-Cno-finalizer-safety-analysis");
+        }
 
         // Enable compile-time checking of `cfg` names, values and Cargo `features`.
         //

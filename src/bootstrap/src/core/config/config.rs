@@ -309,6 +309,7 @@ pub struct Config {
     // alloy debug features
     pub log_stats: bool, // support for LOG_ALLOY_STATS
     pub finalizer_elision: bool,
+    pub finalizer_safety_analysis: bool,
     pub premature_finalizer_prevention: bool,
 
     // misc
@@ -1143,6 +1144,7 @@ define_config! {
     struct Alloy {
         log_stats: Option<bool> = "log-stats",
         finalizer_elision: Option<bool> = "finalizer-elision",
+        finalizer_safety_analysis: Option<bool> = "finalizer-safety-analysis",
         premature_finalizer_prevention: Option<bool> = "premature-finalizer-prevention",
     }
 }
@@ -1216,6 +1218,7 @@ impl Config {
             // alloy opts
             log_stats: false,
             finalizer_elision: true,
+            finalizer_safety_analysis: true,
             premature_finalizer_prevention: true,
 
             ..Default::default()
@@ -1774,6 +1777,7 @@ impl Config {
             let Alloy {
                 log_stats,
                 finalizer_elision,
+                finalizer_safety_analysis,
                 premature_finalizer_prevention,
             } = alloy;
 

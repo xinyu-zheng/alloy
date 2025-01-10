@@ -73,6 +73,10 @@ impl<'tcx> FnInfo<'tcx> {
 
 impl<'tcx> MirPass<'tcx> for CheckFinalizers {
     fn run_pass(&self, tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) {
+        if tcx.sess.opts.cg.no_finalizer_safety_analysis {
+            return;
+        }
+        trace!("Running FSA on {:?}", body.source);
         let param_env = tcx.param_env(body.source.def_id());
 
         if in_std_lib(tcx, body.source.def_id()) {
