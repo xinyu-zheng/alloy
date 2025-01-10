@@ -1430,6 +1430,9 @@ impl<'tcx> Ty<'tcx> {
     /// Note that this method is used to check eligible types in unions.
     #[inline]
     pub fn needs_finalizer(self, tcx: TyCtxt<'tcx>, param_env: ty::ParamEnv<'tcx>) -> bool {
+        if tcx.sess.opts.cg.no_finalizer_elision {
+            return self.needs_drop(tcx, param_env);
+        }
         // Avoid querying in simple cases.
         match needs_drop_components(tcx, self) {
             Err(AlwaysRequiresDrop) => true,

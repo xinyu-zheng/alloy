@@ -309,7 +309,9 @@ pub struct Config {
     // alloy debug features
     pub log_stats: bool, // support for LOG_ALLOY_STATS
     pub finalizer_elision: bool,
+    pub finalizer_safety_analysis: bool,
     pub premature_finalizer_prevention: bool,
+    pub premature_finalizer_prevention_optimize: bool,
 
     // misc
     pub low_priority: bool,
@@ -1143,7 +1145,9 @@ define_config! {
     struct Alloy {
         log_stats: Option<bool> = "log-stats",
         finalizer_elision: Option<bool> = "finalizer-elision",
+        finalizer_safety_analysis: Option<bool> = "finalizer-safety-analysis",
         premature_finalizer_prevention: Option<bool> = "premature-finalizer-prevention",
+        premature_finalizer_prevention_optimize: Option<bool> = "premature-finalizer-prevention-optimize",
     }
 }
 
@@ -1216,7 +1220,9 @@ impl Config {
             // alloy opts
             log_stats: false,
             finalizer_elision: true,
+            finalizer_safety_analysis: true,
             premature_finalizer_prevention: true,
+            premature_finalizer_prevention_optimize: true,
 
             ..Default::default()
         }
@@ -1771,11 +1777,22 @@ impl Config {
         config.rust_info = GitInfo::new(config.omit_git_hash, &config.src);
 
         if let Some(alloy) = toml.alloy {
-            let Alloy { log_stats, finalizer_elision, premature_finalizer_prevention } = alloy;
+            let Alloy {
+                log_stats,
+                finalizer_elision,
+                finalizer_safety_analysis,
+                premature_finalizer_prevention,
+                premature_finalizer_prevention_optimize,
+            } = alloy;
 
             set(&mut config.log_stats, log_stats);
             set(&mut config.finalizer_elision, finalizer_elision);
+            set(&mut config.finalizer_safety_analysis, finalizer_safety_analysis);
             set(&mut config.premature_finalizer_prevention, premature_finalizer_prevention);
+            set(
+                &mut config.premature_finalizer_prevention_optimize,
+                premature_finalizer_prevention_optimize,
+            );
         }
 
         if let Some(llvm) = toml.llvm {

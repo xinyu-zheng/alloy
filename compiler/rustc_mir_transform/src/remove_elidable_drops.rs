@@ -8,6 +8,9 @@ pub struct RemoveElidableDrops;
 
 impl<'tcx> MirPass<'tcx> for RemoveElidableDrops {
     fn run_pass(&self, tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) {
+        if tcx.sess.opts.cg.no_premature_finalizer_prevention_opt {
+            return;
+        }
         trace!("Running RemoveElidableDrops on {:?}", body.source);
 
         let is_gc_crate = tcx
