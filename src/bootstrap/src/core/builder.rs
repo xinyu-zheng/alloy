@@ -1517,6 +1517,11 @@ impl<'a> Builder<'a> {
             rustflags.arg("-Zunstable-options");
         }
 
+        // Alloy features
+        if stage != 0 && !self.config.finalizer_elision {
+            rustflags.arg("-Cno-finalizer-elision");
+        }
+
         // Enable compile-time checking of `cfg` names, values and Cargo `features`.
         //
         // Note: `std`, `alloc` and `core` imports some dependencies by #[path] (like

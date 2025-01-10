@@ -1771,10 +1771,15 @@ impl Config {
         config.rust_info = GitInfo::new(config.omit_git_hash, &config.src);
 
         if let Some(alloy) = toml.alloy {
-            let Alloy { log_stats, finalizer_elision, premature_finalizer_prevention } = alloy;
+            let Alloy {
+                log_stats,
+                finalizer_elision,
+                premature_finalizer_prevention,
+            } = alloy;
 
             set(&mut config.log_stats, log_stats);
             set(&mut config.finalizer_elision, finalizer_elision);
+            set(&mut config.finalizer_safety_analysis, finalizer_safety_analysis);
             set(&mut config.premature_finalizer_prevention, premature_finalizer_prevention);
         }
 

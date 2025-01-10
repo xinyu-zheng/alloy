@@ -753,9 +753,6 @@ impl Build {
         if self.config.log_stats {
             features.push_str(" log-stats");
         }
-        if self.config.finalizer_elision {
-            features.push_str(" finalizer-elision");
-        }
         if self.config.premature_finalizer_prevention {
             features.push_str(" premature-finalizer-prevention");
         }
