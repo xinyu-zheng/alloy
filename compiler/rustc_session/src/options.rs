@@ -1521,6 +1521,8 @@ options! {
         "disable optimization to remove unnecessary finalizers"),
     no_finalizer_safety_analysis: bool = (false, parse_bool, [TRACKED],
         "disable checking of drop methods for GC soundness"),
+    no_premature_finalizer_prevention_opt: bool = (false, parse_bool, [TRACKED],
+        "disable optimization to remove unnecessary finalization barriers"),
     no_prepopulate_passes: bool = (false, parse_no_flag, [TRACKED],
         "give an empty list of passes to the pass manager"),
     no_redzone: Option<bool> = (None, parse_opt_bool, [TRACKED],

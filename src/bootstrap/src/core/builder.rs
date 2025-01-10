@@ -1524,6 +1524,9 @@ impl<'a> Builder<'a> {
         if stage != 0 && !self.config.finalizer_safety_analysis {
             rustflags.arg("-Cno-finalizer-safety-analysis");
         }
+        if stage != 0 && !self.config.premature_finalizer_prevention_optimize {
+            rustflags.arg("-Cno-premature-finalizer-prevention-opt");
+        }
 
         // Enable compile-time checking of `cfg` names, values and Cargo `features`.
         //
