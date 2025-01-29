@@ -351,6 +351,7 @@ fn mir_promoted(
             &promote_pass,
             &simplify::SimplifyCfg::PromoteConsts,
             &coverage::InstrumentCoverage,
+            #[cfg(not(feature = "rustc_no_fsa"))]
             &check_finalizers::CheckFinalizers,
         ],
         Some(MirPhase::Analysis(AnalysisPhase::Initial)),
@@ -617,6 +618,7 @@ fn run_optimization_passes<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) {
             &deduplicate_blocks::DeduplicateBlocks,
             &large_enums::EnumSizeOpt { discrepancy: 128 },
             // Must come before CriticalCallEdges to prevent LLVM basic block ordering errors.
+            #[cfg(not(feature = "rustc_no_premopt"))]
             &remove_elidable_drops::RemoveElidableDrops,
             // Some cleanup necessary at least for LLVM and potentially other codegen backends.
             &add_call_guards::CriticalCallEdges,
