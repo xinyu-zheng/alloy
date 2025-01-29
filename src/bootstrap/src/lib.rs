@@ -773,6 +773,16 @@ impl Build {
             features.push("rustc_use_parallel_compiler");
         }
 
+        if !self.config.premature_finalizer_prevention_optimize {
+            features.push("rustc_no_premopt");
+        }
+        if !self.config.finalizer_safety_analysis {
+            features.push("rustc_no_fsa");
+        }
+        if !self.config.finalizer_elision {
+            features.push("rustc_no_elision");
+        }
+
         // If debug logging is on, then we want the default for tracing:
         // https://github.com/tokio-rs/tracing/blob/3dd5c03d907afdf2c39444a29931833335171554/tracing/src/level_filters.rs#L26
         // which is everything (including debug/trace/etc.)
