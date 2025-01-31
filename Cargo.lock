@@ -4373,6 +4373,7 @@ dependencies = [
 name = "rustc_mir_transform"
 version = "0.0.0"
 dependencies = [
+ "bitflags 2.5.0",
  "either",
  "itertools 0.12.1",
  "rustc_arena",

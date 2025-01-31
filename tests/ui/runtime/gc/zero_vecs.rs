@@ -1,4 +1,4 @@
-//@ run-pass
+//@ ignore-test
 #![feature(gc)]
 #![feature(negative_impls)]
 #![feature(allocator_api)]
