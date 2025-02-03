@@ -987,6 +987,7 @@ pub const unsafe fn assume(b: bool) {
 #[unstable(feature = "core_intrinsics", issue = "none")]
 #[rustc_intrinsic]
 #[rustc_nounwind]
+#[cfg_attr(not(bootstrap), rustc_fsa_safe_fn)]
 pub const fn likely(b: bool) -> bool {
     b
 }
@@ -1006,6 +1007,7 @@ pub const fn likely(b: bool) -> bool {
 #[unstable(feature = "core_intrinsics", issue = "none")]
 #[rustc_intrinsic]
 #[rustc_nounwind]
+#[cfg_attr(not(bootstrap), rustc_fsa_safe_fn)]
 pub const fn unlikely(b: bool) -> bool {
     b
 }
