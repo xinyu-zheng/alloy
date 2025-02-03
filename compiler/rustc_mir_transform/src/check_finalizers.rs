@@ -527,6 +527,10 @@ impl<'ecx, 'tcx> DropCtxt<'ecx, 'tcx> {
                 // We've already checked this function. Ignore it!
                 continue;
             }
+            self.visited_fns.insert(instance);
+            if instance.def.get_attrs(self.ecx.tcx, sym::rustc_fsa_safe_fn).next().is_some() {
+                continue;
+            }
 
             self.visited_fns.insert(instance);
             let Some(mir) = self.ecx.prefer_instantiated_mir(instance) else {
