@@ -156,6 +156,14 @@ impl GcAllocator {
     pub fn force_gc() {
         unsafe { bdwgc::GC_gcollect() }
     }
+
+    pub fn print_prof_stats() -> usize {
+        let mut stats = bdwgc::ProfileStats::default();
+        let filled_sz: usize;
+        unsafe { filled_sz = bdwgc::GC_get_prof_stats(&mut stats, core::mem::size_of::<bdwgc::ProfileStats>()) }
+        eprintln!("{:?}", stats);
+        filled_sz
+    }
 }
 
 #[cfg(feature = "log-stats")]

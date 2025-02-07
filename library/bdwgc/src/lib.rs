@@ -1,7 +1,7 @@
 #![no_std]
 
 #[repr(C)]
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct ProfileStats {
     /// Heap size in bytes (including area unmapped to OS).
     pub heapsize_full: usize,
@@ -28,10 +28,14 @@ pub struct ProfileStats {
     pub reclaimed_bytes_before_gc: usize,
     /// Number of bytes freed explicitly since the recent GC.
     pub expl_freed_bytes_since_gc: usize,
+    /// Total amount of memory obtained from OS, in bytes.
+    pub obtained_from_os_bytes: usize,
 }
 
 #[link(name = "gc")]
 extern "C" {
+    pub fn GC_get_prof_stats(stats: *mut ProfileStats, stats_sz: usize) -> usize;
+
     pub fn GC_malloc(nbytes: usize) -> *mut u8;
 
     pub fn GC_posix_memalign(mem_ptr: *mut *mut u8, align: usize, nbytes: usize) -> i32;
